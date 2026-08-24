@@ -42,6 +42,32 @@ LABEL_LAINNYA = 'Lainnya'
 # Kolom kosong (None) berarti mengikuti tarif umum untuk kualifikasi itu.
 # Kelompok pertama: Interface 20%, Normal 20%, Mati Total 22%, Lainnya 20%,
 # Promo ikut tarif umum.
+# Jasa yang tidak ikut dihitung bagi hasil (dicocokkan pada NAMA BARANG).
+POLA_JASA_DIKECUALIKAN = ['OPER GADGET']
+
+# Sebagian cabang datanya belum memakai penamaan barang berkata kunci, sehingga
+# kualifikasi dibaca dari kolom KERUSAKAN UTAMA + KATEGORI PENJUALAN.
+CABANG_ACUAN_KERUSAKAN = ['CONDET']
+KERUSAKAN_INTERFACE = ['BATERAI', 'SSD', 'RAM']
+KERUSAKAN_NORMAL = ['FLEXIBEL', 'FLEXIBLE', 'FLEKSIBEL', 'MIC', 'WIFI CARD', 'REPAIR']
+
+
+def label_dari_kerusakan(kerusakan, kategori_jual):
+    """Kualifikasi dari KERUSAKAN UTAMA; LCD & SOFTWARE bergantung kategori jual."""
+    ku = str(kerusakan or '').upper()
+    kp = str(kategori_jual or '').upper()
+    laptop = 'LAPTOP' in kp
+    if 'MATI TOTAL' in ku:
+        return 'Mati Total'
+    if 'LCD' in ku:                       # HP -> Interface, laptop -> Normal
+        return 'Normal' if laptop else ('Interface' if 'HP' in kp else 'Normal')
+    if 'SOFTWARE' in ku:                  # laptop -> Interface, HP -> Normal
+        return 'Interface' if laptop else 'Normal'
+    if any(k in ku for k in KERUSAKAN_INTERFACE):
+        return 'Interface'
+    return 'Normal'                       # termasuk daftar KERUSAKAN_NORMAL
+
+
 NAMA_TARIF_TETAP_20 = [
     'M IBNU SIDIK', 'RAFI ALAMSYAH', 'MIFTAHUL MUTTAQIEN', 'BRYAN PUTRA',
     'HAMZAH MAULANA', 'DAVID SONDAKH', 'FATHUR ROHMAN SOBARNA', 'ALAI ARKAN',
@@ -205,7 +231,8 @@ def daftar_periode_gaji(tgl_min, tgl_max):
 
 SALES_REQUIRED = ['TGL FAKTUR', 'NO FAKTUR', 'KATEGORI BARANG', 'NAMA BARANG',
                   'QTY', 'TOTAL HARGA']          # CABANG boleh datang dari nama berkas
-KOLOM_DIPAKAI = SALES_REQUIRED + ['CABANG', 'NAMA TEKNISI', 'NAMA TEKNISI (FINAL)']
+KOLOM_DIPAKAI = SALES_REQUIRED + ['CABANG', 'NAMA TEKNISI', 'NAMA TEKNISI (FINAL)',
+                                 'KERUSAKAN UTAMA', 'KATEGORI PENJUALAN']
 # NO FAKTUR hanya unik DI DALAM satu cabang (nomor MF-FP.xxxx dipakai ulang di
 # cabang lain), jadi kunci duplikat wajib menyertakan CABANG. Baris kembar di
 # dalam satu berkas tetap dipertahankan — yang dibuang hanya kiriman ulang.
@@ -410,6 +437,12 @@ def bersihkan(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[df['TEKNISI'] == '', 'TEKNISI'] = 'TIDAK ADA TEKNISI'
 
     df = df[df['KATEGORI'] == 'JASA'].copy()
+    for asal, baru in [('KERUSAKAN UTAMA', 'KERUSAKAN'),
+                       ('KATEGORI PENJUALAN', 'KAT_JUAL')]:
+        df[baru] = (df[asal].astype(str).str.replace(r'\s+', ' ', regex=True)
+                    .str.strip().str.upper().fillna('')
+                    if asal in df.columns else '')
+        df.loc[df[baru].isin(['NAN', 'NONE', '<NA>']), baru] = ''
     df['KW_MATCH'] = df['BARANG'].map(lambda s: '|'.join(cocok_kata_kunci(s)))
     return df
 
@@ -587,6 +620,26 @@ with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", e
             ['Normal', 'Promo', 'Mati Total', 'Interface'], index=0, key='t_prio')
 
     st.divider()
+    st.markdown("**Pengecualian & acuan kualifikasi**")
+    k1, k2 = st.columns(2)
+    with k1:
+        teks_kecuali = st.text_area(
+            "Jasa yang tidak dihitung (satu pola per baris)",
+            value="\n".join(POLA_JASA_DIKECUALIKAN), height=90, key='teks_kecuali',
+            help="Dicocokkan pada NAMA BARANG, tidak peduli huruf besar/kecil. "
+                 "Baris jasa yang cocok dikeluarkan dari seluruh perhitungan.")
+    with k2:
+        cab_kerusakan = st.multiselect(
+            "Cabang yang kualifikasinya dibaca dari KERUSAKAN UTAMA",
+            options=sorted(jasa_all['CABANG'].dropna().unique().tolist()),
+            default=[c for c in CABANG_ACUAN_KERUSAKAN
+                     if c in set(jasa_all['CABANG'].dropna())],
+            key='cab_kerusakan',
+            help="Untuk cabang yang penamaan barangnya belum memakai kata kunci. "
+                 "Interface: LCD (service HP), baterai, SSD, RAM, software (service "
+                 "laptop). Mati Total: kerusakan 'mati total'. Sisanya Normal.")
+
+    st.divider()
     st.markdown("**Tarif khusus per teknisi**")
     st.caption(
         "Teknisi di tabel ini memakai persentase sendiri; kolom yang dikosongkan "
@@ -621,7 +674,25 @@ peta_tarif = {k: v / 100.0 for k, v in tarif_input.items()}
 peta_tarif[LABEL_LAINNYA] = tarif_lain / 100.0
 
 jasa_all = jasa_all.copy()
+
+pola_kecuali = [p.strip().upper() for p in teks_kecuali.splitlines() if p.strip()]
+n_kecuali, omzet_kecuali = 0, 0.0
+if pola_kecuali:
+    b = jasa_all['BARANG'].astype(str).str.upper()
+    buang = pd.Series(False, index=jasa_all.index)
+    for p in pola_kecuali:
+        buang |= b.str.contains(re.escape(p), regex=True, na=False)
+    n_kecuali = int(buang.sum())
+    omzet_kecuali = float(jasa_all.loc[buang, 'TOTAL HARGA'].sum())
+    jasa_all = jasa_all[~buang].copy()
+
 jasa_all['TARIF_LABEL'] = jasa_all['KW_MATCH'].map(lambda s: pilih_label_tarif(s, urutan))
+if cab_kerusakan and 'KERUSAKAN' in jasa_all.columns:
+    m_ker = jasa_all['CABANG'].isin(cab_kerusakan)
+    if m_ker.any():
+        jasa_all.loc[m_ker, 'TARIF_LABEL'] = [
+            label_dari_kerusakan(k, p) for k, p in
+            zip(jasa_all.loc[m_ker, 'KERUSAKAN'], jasa_all.loc[m_ker, 'KAT_JUAL'])]
 jasa_all['TARIF'] = jasa_all['TARIF_LABEL'].map(peta_tarif).fillna(0.0)
 
 khusus = peta_tarif_khusus(tabel_khusus)
@@ -644,6 +715,13 @@ st.caption(
     f" · Lainnya {tarif_lain:.0f}% · pembanding flat {tarif_flat:.0f}%"
     f" · prioritas bentrok: {prioritas}"
 )
+if n_kecuali:
+    st.caption(f"**Dikecualikan:** {n_kecuali:,} baris jasa "
+               f"({', '.join(pola_kecuali)}) senilai {rp(omzet_kecuali)} "
+               "tidak ikut dihitung.")
+if cab_kerusakan:
+    st.caption("**Acuan KERUSAKAN UTAMA** dipakai untuk cabang: "
+               + ", ".join(cab_kerusakan) + ".")
 if khusus:
     st.caption(
         f"**Tarif khusus:** {len(khusus)} teknisi terdaftar, "
@@ -1474,5 +1552,12 @@ with st.expander("ℹ️ Cara perhitungan & catatan"):
         "*TIDAK ADA TEKNISI* — tetap ditampilkan agar terlihat, dan bisa disembunyikan "
         "lewat centang di atas.\n\n"
         "Perhitungan memakai **omzet jasa (TOTAL HARGA)**, belum dikurangi biaya apa pun. "
-        "Hanya baris berkategori **JASA** yang dihitung."
+        "Hanya baris berkategori **JASA** yang dihitung, dan baris yang cocok dengan "
+        "daftar pengecualian (bawaan: **oper gadget**) dikeluarkan lebih dulu.\n\n"
+        "Untuk cabang yang dipilih pada **acuan KERUSAKAN UTAMA**, kualifikasi tidak "
+        "dibaca dari nama barang melainkan dari kolom KERUSAKAN UTAMA bersama KATEGORI "
+        "PENJUALAN: LCD pada service HP, baterai, SSD, RAM, dan software pada service "
+        "laptop masuk **Interface**; LCD pada service laptop, flexibel, mic, wifi card, "
+        "software pada service HP, dan repair masuk **Normal**; kerusakan `mati total` "
+        "masuk **Mati Total**; kerusakan lain di luar daftar ikut **Normal**."
     )
