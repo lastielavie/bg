@@ -22,8 +22,6 @@ import streamlit as st
 
 st.set_page_config(page_title="Bagi Hasil Teknisi", layout="wide", page_icon="🧰")
 
-DEFAULT_SALES_PATH = Path(__file__).parent / "data" / "penjualan.csv.gz"
-
 BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli',
                'Agustus', 'September', 'Oktober', 'November', 'Desember']
 
@@ -418,16 +416,6 @@ def bersihkan(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(show_spinner="Membaca data penjualan...")
-def load_sales(file_bytes: bytes, source_kind: str) -> pd.DataFrame:
-    nama = {'csv_gz': 'penjualan.csv.gz', 'csv': 'penjualan.csv'}.get(source_kind, 'penjualan.xlsx')
-    mentah, _, gagal = baca_mentah(((nama, file_bytes),), tuple(CABANG_KANONIK),
-                                   tuple(ALIAS_CABANG_AWAL.items()))
-    if mentah.empty:
-        raise ValueError(gagal[0] if gagal else "tidak ada baris data")
-    return bersihkan(mentah)
-
-
 # ---------------------------------------------------------------------------
 # Sidebar: sumber data (terbatas 1 file saja)
 # ---------------------------------------------------------------------------
@@ -437,8 +425,7 @@ up = st.sidebar.file_uploader(
     type=['xlsx', 'xlsm', 'gz', 'csv'],
     accept_multiple_files=False,  # Batasi hanya 1 file saja
     key='uploader_cabang',
-    help="Upload 1 berkas penjualan gabungan. "
-         "Kalau kosong, dipakai berkas bawaan data/penjualan.csv.gz.")
+    help="Upload 1 berkas penjualan gabungan.")
 
 buang_duplikat = st.sidebar.checkbox(
     "Buang kiriman ulang (duplikat)", value=True, key='opsi_dedup',
@@ -511,9 +498,6 @@ try:
                 f"1 berkas · {jasa_all['CABANG'].nunique()} cabang · "
                 f"{len(jasa_all):,} baris jasa"
                 + (f" · {n_dup:,} baris duplikat dibuang" if n_dup else ""))
-    elif DEFAULT_SALES_PATH.exists():
-        jasa_all = load_sales(DEFAULT_SALES_PATH.read_bytes(), 'csv_gz')
-        st.sidebar.info("Memakai data bawaan repo.")
 except Exception as e:
     st.sidebar.error(f"Data tidak terbaca: {e}")
 
@@ -525,7 +509,7 @@ st.title("🧰 Bagi Hasil Teknisi")
 
 if jasa_all.empty:
     st.info(
-        "Data belum tersedia. Upload file penjualan lewat panel kiri.\n\n"
+        "Data belum tersedia. Silakan upload file penjualan lewat panel kiri.\n\n"
         "Format yang dibutuhkan: data faktur penjualan dengan kolom TGL FAKTUR, NO FAKTUR, "
         "KATEGORI BARANG, NAMA BARANG, NAMA TEKNISI (FINAL), QTY, TOTAL HARGA, dan CABANG "
         "(atau satu sheet per cabang bila berupa .xlsx)."
@@ -941,9 +925,9 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
         for j in range(1, n_kol + 1):
             ws.cell(row=r, column=j).border = Border(bottom=thin)
 
-        # 4. Inputan Manual Potongan, Total Potongan, & Gaji Teknisi
+        # 4. Inputan Manual Potongan & Total Potongan (Kuning Muda FFF8E1)
         if kolom_gaji:
-            for kol in KOLOM_POTONGAN + KOLOM_CADANGAN + ['Total Potongan', 'Gaji Teknisi']:
+            for kol in KOLOM_POTONGAN + KOLOM_CADANGAN + ['Total Potongan']:
                 ws.cell(row=r, column=df.columns.get_loc(kol) + 1).fill = \
                     PatternFill('solid', fgColor='FFF8E1')
             for kol, rumus in _rumus_gaji(df, r).items():
