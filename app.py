@@ -1034,32 +1034,78 @@ def buat_excel(df_sumber, raw_bytes=None):
             # 1. Salin sheet
             ws_f = salin_sheet(sheet_target, wb, title_dst="final")
 
-            # 2. Samakan jumlah baris data dengan RAW
-            teknisi_unik = [t for t in d['TEKNISI'].unique() if str(t).strip().upper() != 'TIDAK ADA TEKNISI']
-            n_data_raw = len(teknisi_unik)
-            baris_awal_data = 5
+            # 2. Ambil daftar teknisi valid dari RAW (mengabaikan 'TIDAK ADA TEKNISI')
+            teknisi_raw = [t for t in d['TEKNISI'].unique() if str(t).strip().upper() not in NAMA_KOSONG and str(t).strip().upper() != 'TIDAK ADA TEKNISI']
+            n_data_raw = len(teknisi_raw)
 
-            # Cari posisi baris TOTAL di sheet final
+            # 3. Cari baris Header & baris data awal di sheet final
+            baris_header = None
+            for r in range(1, ws_f.max_row + 1):
+                row_vals = [str(ws_f.cell(r, c).value or '').strip().upper() for c in range(1, ws_f.max_column + 1)]
+                if 'NAMA' in row_vals or 'NO' in row_vals or 'NIK' in row_vals:
+                    baris_header = r
+                    break
+
+            baris_awal_data = (baris_header + 1) if baris_header else 8
+
+            # Cari posisi kolom 'NO' dan 'NAMA'
+            col_no = 1
+            col_nama = 3
+            if baris_header:
+                for c in range(1, ws_f.max_column + 1):
+                    val = str(ws_f.cell(baris_header, c).value or '').strip().upper()
+                    if val == 'NO':
+                        col_no = c
+                    elif 'NAMA' in val:
+                        col_nama = c
+
+            # 4. Cari posisi baris TOTAL di sheet final
             baris_total = None
             for r in range(baris_awal_data, ws_f.max_row + 1):
-                val = str(ws_f.cell(r, 1).value or ws_f.cell(r, 2).value or '').strip().upper()
+                val = str(ws_f.cell(r, 1).value or ws_f.cell(r, col_nama).value or '').strip().upper()
                 if 'TOTAL' in val:
                     baris_total = r
                     break
 
-            # Jika ada baris template berlebih, hapus sisanya & perbarui rumus SUM
-            if baris_total and (baris_total - baris_awal_data) > n_data_raw:
-                baris_hapus_mulai = baris_awal_data + n_data_raw
-                jumlah_dihapus = baris_total - baris_hapus_mulai
-                ws_f.delete_rows(baris_hapus_mulai, jumlah_dihapus)
+            if baris_total:
+                n_template_rows = baris_total - baris_awal_data
 
+                # A. Jika data RAW lebih sedikit dari template: hapus baris berlebih
+                if n_template_rows > n_data_raw:
+                    baris_hapus_mulai = baris_awal_data + n_data_raw
+                    jumlah_dihapus = n_template_rows - n_data_raw
+                    ws_f.delete_rows(baris_hapus_mulai, jumlah_dihapus)
+
+                # B. Jika data RAW lebih banyak dari template: sisipkan baris baru
+                elif n_data_raw > n_template_rows:
+                    jumlah_disisip = n_data_raw - n_template_rows
+                    ws_f.insert_rows(baris_total, amount=jumlah_disisip)
+
+                    for r_new in range(baris_total, baris_total + jumlah_disisip):
+                        for col_idx in range(1, ws_f.max_column + 1):
+                            ref_cell = ws_f.cell(baris_awal_data, col_idx)
+                            new_cell = ws_f.cell(r_new, col_idx)
+                            if ref_cell.has_style:
+                                new_cell.font = copy(ref_cell.font)
+                                new_cell.border = copy(ref_cell.border)
+                                new_cell.fill = copy(ref_cell.fill)
+                                new_cell.number_format = ref_cell.number_format
+                                new_cell.alignment = copy(ref_cell.alignment)
+
+                # 5. Isikan Nomor Urut & Nama Teknisi dari RAW ke sheet final
+                for idx, nama_tek in enumerate(teknisi_raw):
+                    r_curr = baris_awal_data + idx
+                    ws_f.cell(row=r_curr, column=col_no, value=idx + 1)
+                    ws_f.cell(row=r_curr, column=col_nama, value=nama_tek)
+
+                # 6. Perbarui baris TOTAL dan rumus SUM
                 baris_total_baru = baris_awal_data + n_data_raw
                 baris_data_akhir = baris_total_baru - 1
 
                 for col_idx in range(1, ws_f.max_column + 1):
                     cell = ws_f.cell(row=baris_total_baru, column=col_idx)
                     if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
-                        cell.value = re.sub(r'(SUM\([A-Z]+5:[A-Z]+)\d+\)', rf'\g<1>{baris_data_akhir})', cell.value, flags=re.I)
+                        cell.value = re.sub(rf'(SUM\([A-Z]+{baris_awal_data}:[A-Z]+)\d+\)', rf'\g<1>{baris_data_akhir})', cell.value, flags=re.I)
 
         except Exception as e:
             st.warning(f"Gagal menyalin/menyesuaikan sheet 'final' dari final.xlsx: {e}")
