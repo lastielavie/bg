@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 import streamlit as st
 
 st.set_page_config(page_title="Bagi Hasil Teknisi", layout="wide", page_icon="🧰")
@@ -773,46 +773,62 @@ def _rumus_gaji(df, r):
 
 
 def salin_sheet(ws_src, wb_dst, title_dst=None):
-    """Menyalin sheet dari source workbook ke destination workbook beserta gaya selnya."""
+    """Menyalin sheet dari source workbook ke destination workbook beserta gaya sel & lebar kolom."""
     if title_dst is None:
         title_dst = ws_src.title
     ws_dst = wb_dst.create_sheet(title=title_dst)
 
+    # 1. Salin data & styling sel
     for row in ws_src.iter_rows():
         for cell in row:
             new_cell = ws_dst.cell(row=cell.row, column=cell.column, value=cell.value)
             if cell.has_style:
-                try:
-                    new_cell.font = copy(cell.font)
-                except Exception:
-                    pass
-                try:
-                    new_cell.border = copy(cell.border)
-                except Exception:
-                    pass
-                try:
-                    new_cell.fill = copy(cell.fill)
-                except Exception:
-                    pass
+                try: new_cell.font = copy(cell.font)
+                except Exception: pass
+                try: new_cell.border = copy(cell.border)
+                except Exception: pass
+                try: new_cell.fill = copy(cell.fill)
+                except Exception: pass
                 if cell.number_format:
                     new_cell.number_format = cell.number_format
-                try:
-                    new_cell.protection = copy(cell.protection)
-                except Exception:
-                    pass
-                try:
-                    new_cell.alignment = copy(cell.alignment)
-                except Exception:
-                    pass
+                try: new_cell.protection = copy(cell.protection)
+                except Exception: pass
+                try: new_cell.alignment = copy(cell.alignment)
+                except Exception: pass
 
-    for col_letter, col_dim in ws_src.column_dimensions.items():
-        ws_dst.column_dimensions[col_letter].width = col_dim.width
+    # 2. Salin lebar kolom bawaan (termasuk penanganan range kolom seperti 'Q:S' atau 'U:X')
+    for col_key, col_dim in ws_src.column_dimensions.items():
+        if col_dim.width is None:
+            continue
+        col_str = str(col_key)
+        if ':' in col_str:
+            parts = col_str.split(':')
+            try:
+                start_idx = int(parts[0]) if parts[0].isdigit() else column_index_from_string(parts[0])
+                end_idx = int(parts[1]) if parts[1].isdigit() else column_index_from_string(parts[1])
+                for col_idx in range(start_idx, end_idx + 1):
+                    ws_dst.column_dimensions[get_column_letter(col_idx)].width = col_dim.width
+            except Exception:
+                pass
+        else:
+            try:
+                letter = get_column_letter(int(col_str)) if col_str.isdigit() else col_str
+                ws_dst.column_dimensions[letter].width = col_dim.width
+            except Exception:
+                pass
 
+    # 3. Salin tinggi baris
     for row_idx, row_dim in ws_src.row_dimensions.items():
         ws_dst.row_dimensions[row_idx].height = row_dim.height
 
+    # 4. Salin merged cells
     for merged_cell in ws_src.merged_cells.ranges:
         ws_dst.merge_cells(str(merged_cell))
+
+    # Khusus sheet 'final': atur fixed lebar kolom P s/d Y = 42.57
+    if str(title_dst).strip().lower() == 'final':
+        for col_letter in ['P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y']:
+            ws_dst.column_dimensions[col_letter].width = 42.57
 
     return ws_dst
 
@@ -1014,7 +1030,7 @@ def buat_excel(df_sumber, raw_bytes=None):
                     break
             if sheet_target is None:
                 sheet_target = wb_final.active
-            
+
             salin_sheet(sheet_target, wb, title_dst="final")
         except Exception as e:
             st.warning(f"Gagal menyalin sheet 'final' dari final.xlsx: {e}")
