@@ -796,7 +796,7 @@ def salin_sheet(ws_src, wb_dst, title_dst=None):
                 try: new_cell.alignment = copy(cell.alignment)
                 except Exception: pass
 
-    # 2. Salin lebar kolom bawaan (termasuk penanganan range kolom seperti 'Q:S' atau 'U:X')
+    # 2. Salin lebar kolom bawaan
     for col_key, col_dim in ws_src.column_dimensions.items():
         if col_dim.width is None:
             continue
@@ -964,7 +964,7 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
         ws.auto_filter.ref = f"A4:{get_column_letter(n_kol)}{4 + n_baris}"
 
 
-def buat_excel(df_sumber, raw_bytes=None):
+def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
     """Workbook: Sheet 1 (Rincian Faktur Penjualan), Sheet 2 (Pivot), Sheet 3 (RAW), Sheet 4 (final)."""
     buf = io.BytesIO()
 
@@ -1034,11 +1034,28 @@ def buat_excel(df_sumber, raw_bytes=None):
             # 1. Salin sheet
             ws_f = salin_sheet(sheet_target, wb, title_dst="final")
 
-            # 2. Ambil daftar teknisi valid dari RAW (mengabaikan 'TIDAK ADA TEKNISI')
-            teknisi_raw = [t for t in d['TEKNISI'].unique() if str(t).strip().upper() not in NAMA_KOSONG and str(t).strip().upper() != 'TIDAK ADA TEKNISI']
+            # 2. Update Nama Cabang di Baris 2 (Sel B2)
+            val_b2 = str(ws_f.cell(row=2, column=2).value or '')
+            if val_b2 and nama_cabang_file and nama_cabang_file != 'Semua Cabang':
+                new_b2 = re.sub(r'MFLASH\s+[A-Z0-9\_]+', f'MFLASH {nama_cabang_file}', val_b2, flags=re.I)
+                if new_b2 == val_b2:
+                    new_b2 = val_b2.replace('JATIMULYA', nama_cabang_file)
+                ws_f.cell(row=2, column=2, value=new_b2)
+
+            # 3. Update Periode Bulan & Tahun di Baris 4 (Sel D4)
+            if 'TGL' in df_sumber.columns and not df_sumber['TGL'].dropna().empty:
+                t_max_f = df_sumber['TGL'].max()
+                if pd.notna(t_max_f):
+                    bln_nama = BULAN_NAMES[t_max_f.month].upper()
+                    thn_num = t_max_f.year
+                    ws_f.cell(row=4, column=4, value=f"{bln_nama} {thn_num}")
+
+            # 4. Ambil daftar teknisi valid dari RAW (mengabaikan 'TIDAK ADA TEKNISI')
+            teknisi_raw = [t for t in d['TEKNISI'].unique()
+                           if str(t).strip().upper() not in NAMA_KOSONG and str(t).strip().upper() != 'TIDAK ADA TEKNISI']
             n_data_raw = len(teknisi_raw)
 
-            # 3. Cari baris Header & baris data awal di sheet final
+            # 5. Cari baris Header & baris data awal di sheet final
             baris_header = None
             for r in range(1, ws_f.max_row + 1):
                 row_vals = [str(ws_f.cell(r, c).value or '').strip().upper() for c in range(1, ws_f.max_column + 1)]
@@ -1049,8 +1066,8 @@ def buat_excel(df_sumber, raw_bytes=None):
             baris_awal_data = (baris_header + 1) if baris_header else 8
 
             # Cari posisi kolom 'NO' dan 'NAMA'
-            col_no = 1
-            col_nama = 3
+            col_no = 2
+            col_nama = 4
             if baris_header:
                 for c in range(1, ws_f.max_column + 1):
                     val = str(ws_f.cell(baris_header, c).value or '').strip().upper()
@@ -1059,10 +1076,10 @@ def buat_excel(df_sumber, raw_bytes=None):
                     elif 'NAMA' in val:
                         col_nama = c
 
-            # 4. Cari posisi baris TOTAL di sheet final
+            # 6. Cari posisi baris TOTAL di sheet final
             baris_total = None
             for r in range(baris_awal_data, ws_f.max_row + 1):
-                val = str(ws_f.cell(r, 1).value or ws_f.cell(r, col_nama).value or '').strip().upper()
+                val = str(ws_f.cell(r, col_no).value or ws_f.cell(r, col_nama).value or '').strip().upper()
                 if 'TOTAL' in val:
                     baris_total = r
                     break
@@ -1092,20 +1109,25 @@ def buat_excel(df_sumber, raw_bytes=None):
                                 new_cell.number_format = ref_cell.number_format
                                 new_cell.alignment = copy(ref_cell.alignment)
 
-                # 5. Isikan Nomor Urut & Nama Teknisi dari RAW ke sheet final
+                # 7. Isikan Nomor Urut & Nama Teknisi dari RAW ke sheet final
                 for idx, nama_tek in enumerate(teknisi_raw):
                     r_curr = baris_awal_data + idx
                     ws_f.cell(row=r_curr, column=col_no, value=idx + 1)
                     ws_f.cell(row=r_curr, column=col_nama, value=nama_tek)
 
-                # 6. Perbarui baris TOTAL dan rumus SUM
+                # 8. Perbarui baris TOTAL dan rumus SUM
                 baris_total_baru = baris_awal_data + n_data_raw
                 baris_data_akhir = baris_total_baru - 1
 
                 for col_idx in range(1, ws_f.max_column + 1):
                     cell = ws_f.cell(row=baris_total_baru, column=col_idx)
                     if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
-                        cell.value = re.sub(rf'(SUM\([A-Z]+{baris_awal_data}:[A-Z]+)\d+\)', rf'\g<1>{baris_data_akhir})', cell.value, flags=re.I)
+                        cell.value = re.sub(
+                            r'SUM\(([A-Z]+)\d+:([A-Z]+)\d+\)',
+                            rf'SUM(\g<1>{baris_awal_data}:\g<2>{baris_data_akhir})',
+                            cell.value,
+                            flags=re.I
+                        )
 
         except Exception as e:
             st.warning(f"Gagal menyalin/menyesuaikan sheet 'final' dari final.xlsx: {e}")
@@ -1146,7 +1168,7 @@ with st.container():
     )
     if st.button("🧾 Siapkan berkas Excel", key='siap_xlsx', use_container_width=True):
         with st.spinner("Menyusun workbook..."):
-            st.session_state['xlsx_bytes'] = buat_excel(jasa_tampil, raw_uploaded_bytes)
+            st.session_state['xlsx_bytes'] = buat_excel(jasa_tampil, raw_uploaded_bytes, nama_cabang_file)
             st.session_state['xlsx_filename'] = nama_file_download
     if st.session_state.get('xlsx_bytes') is not None:
         st.download_button(
