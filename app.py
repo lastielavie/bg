@@ -295,7 +295,6 @@ def _potongan_berkas(nama_berkas: str, isi: bytes):
         if xls is None:
             xls = pd.ExcelFile(io.BytesIO(isi), engine='openpyxl')
         for sheet in xls.sheet_names:
-            # Abaikan sheet non-transaksi (Pivot/Sheet N) agar tidak memicu error
             if str(sheet).strip().lower() in ['pivot', 'pivottable', 'sheet n', 'pivot table']:
                 continue
             d = xls.parse(sheet)
@@ -903,7 +902,7 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
 
 
 def buat_excel(df_sumber, raw_bytes=None):
-    """Workbook: Sheet 1 (Rincian Faktur Penjualan), Sheet 2 (Pivot), Sheet 3..N (Per Cabang)."""
+    """Workbook: Sheet 1 (Rincian Faktur Penjualan), Sheet 2 (Pivot), Sheet 3 (RAW)."""
     buf = io.BytesIO()
 
     d = df_sumber.copy()
@@ -937,7 +936,9 @@ def buat_excel(df_sumber, raw_bytes=None):
         wb.create_sheet(title="Pivot")
 
     terpakai = set(s.lower() for s in wb.sheetnames)
-    for cab in sorted(d['CABANG'].unique()):
+    cabang_list = sorted(d['CABANG'].unique())
+
+    for idx, cab in enumerate(cabang_list):
         sub = d[d['CABANG'] == cab]
         if sub.empty:
             continue
@@ -946,7 +947,13 @@ def buat_excel(df_sumber, raw_bytes=None):
         for kol in KOLOM_GAJI:
             dc[kol] = pd.NA
 
-        s_name = _sheet_name(cab, terpakai)
+        # Sheet ketiga selalu dinamai 'RAW'
+        if idx == 0:
+            s_name = 'RAW'
+            terpakai.add('raw')
+        else:
+            s_name = _sheet_name(cab, terpakai)
+
         _tulis_sheet(wb, dc, s_name, f'Bagi Hasil Teknisi — Cabang {cab}', kolom_gaji=True)
 
     wb.save(buf)
@@ -954,20 +961,43 @@ def buat_excel(df_sumber, raw_bytes=None):
     return buf.getvalue()
 
 
+# Menentukan nama file download otomatis: Bagi hasil teknisi <tanggal> <cabang>.xlsx
+if f_cabang != 'Semua Cabang':
+    nama_cabang_file = f_cabang
+else:
+    cabs_file = sorted(jasa_tampil['CABANG'].dropna().unique().tolist())
+    nama_cabang_file = cabs_file[0] if len(cabs_file) == 1 else 'Semua Cabang'
+
+if isinstance(pilih, tuple):
+    a_f, b_f = periode_gaji(pilih[1], pilih[0])
+    label_tgl_file = f"{a_f.day} {BULAN_NAMES[a_f.month]} - {b_f.day} {BULAN_NAMES[b_f.month]} {b_f.year}"
+else:
+    if not jasa_tampil.empty and 'TGL' in jasa_tampil.columns:
+        t_min_f = jasa_tampil['TGL'].min()
+        t_max_f = jasa_tampil['TGL'].max()
+        if pd.notna(t_min_f) and pd.notna(t_max_f):
+            label_tgl_file = f"{t_min_f.day} {BULAN_NAMES[t_min_f.month]} - {t_max_f.day} {BULAN_NAMES[t_max_f.month]} {t_max_f.year}"
+        else:
+            label_tgl_file = date.today().strftime('%d-%m-%Y')
+    else:
+        label_tgl_file = date.today().strftime('%d-%m-%Y')
+
+nama_file_download = f"Bagi hasil teknisi {label_tgl_file} {nama_cabang_file}.xlsx"
+
 with st.container():
-    st.markdown("##### 📊 Unduh Excel (Sesuai Template + Sheet per Cabang)")
+    st.markdown("##### 📊 Unduh Excel (Sesuai Template + Sheet RAW)")
     st.caption(
         "Mengunduh file Excel yang berisi **Sheet 1 (Rincian Faktur Penjualan)**, "
-        "**Sheet 2 (Pivot)**, dan **Sheet 3 s/d N (Rekap Per Cabang)**."
+        "**Sheet 2 (Pivot)**, dan **Sheet 3 (RAW)**."
     )
     if st.button("🧾 Siapkan berkas Excel", key='siap_xlsx', use_container_width=True):
         with st.spinner("Menyusun workbook..."):
             st.session_state['xlsx_bytes'] = buat_excel(jasa_tampil, raw_uploaded_bytes)
-            st.session_state['xlsx_tag'] = tag_file
+            st.session_state['xlsx_filename'] = nama_file_download
     if st.session_state.get('xlsx_bytes') is not None:
         st.download_button(
             "⬇️ Unduh Excel (.xlsx)",
             data=st.session_state['xlsx_bytes'],
-            file_name=f"bagi_hasil_teknisi_{st.session_state.get('xlsx_tag', tag_file)}.xlsx",
+            file_name=st.session_state.get('xlsx_filename', nama_file_download),
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True, key='unduh_xlsx')
