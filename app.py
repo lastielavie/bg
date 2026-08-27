@@ -1031,9 +1031,38 @@ def buat_excel(df_sumber, raw_bytes=None):
             if sheet_target is None:
                 sheet_target = wb_final.active
 
-            salin_sheet(sheet_target, wb, title_dst="final")
+            # 1. Salin sheet
+            ws_f = salin_sheet(sheet_target, wb, title_dst="final")
+
+            # 2. Samakan jumlah baris data dengan RAW
+            teknisi_unik = [t for t in d['TEKNISI'].unique() if str(t).strip().upper() != 'TIDAK ADA TEKNISI']
+            n_data_raw = len(teknisi_unik)
+            baris_awal_data = 5
+
+            # Cari posisi baris TOTAL di sheet final
+            baris_total = None
+            for r in range(baris_awal_data, ws_f.max_row + 1):
+                val = str(ws_f.cell(r, 1).value or ws_f.cell(r, 2).value or '').strip().upper()
+                if 'TOTAL' in val:
+                    baris_total = r
+                    break
+
+            # Jika ada baris template berlebih, hapus sisanya & perbarui rumus SUM
+            if baris_total and (baris_total - baris_awal_data) > n_data_raw:
+                baris_hapus_mulai = baris_awal_data + n_data_raw
+                jumlah_dihapus = baris_total - baris_hapus_mulai
+                ws_f.delete_rows(baris_hapus_mulai, jumlah_dihapus)
+
+                baris_total_baru = baris_awal_data + n_data_raw
+                baris_data_akhir = baris_total_baru - 1
+
+                for col_idx in range(1, ws_f.max_column + 1):
+                    cell = ws_f.cell(row=baris_total_baru, column=col_idx)
+                    if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
+                        cell.value = re.sub(r'(SUM\([A-Z]+5:[A-Z]+)\d+\)', rf'\g<1>{baris_data_akhir})', cell.value, flags=re.I)
+
         except Exception as e:
-            st.warning(f"Gagal menyalin sheet 'final' dari final.xlsx: {e}")
+            st.warning(f"Gagal menyalin/menyesuaikan sheet 'final' dari final.xlsx: {e}")
 
     wb.save(buf)
     buf.seek(0)
