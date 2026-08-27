@@ -864,11 +864,11 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
         if kol.startswith('Bagi Hasil'):
             c.fill = head_fill_kuning
             c.font = head_font_hitam
-        # 2. Total Potongan & Gaji Teknisi -> Cokelat (Sama seperti Potongan/Simpanan Wajib)
-        elif kol in (KOLOM_POTONGAN + KOLOM_CADANGAN + ['Total Potongan', 'Gaji Teknisi']):
+        # 2. Total Potongan -> Cokelat (Sama seperti Potongan/Simpanan Wajib)
+        elif kol in (KOLOM_POTONGAN + KOLOM_CADANGAN + ['Total Potongan']):
             c.fill = head_fill_coklat
-        # 3. Kolom Rumus Lainnya -> Hijau
-        elif kol in KOLOM_RUMUS:
+        # 3. Gaji Teknisi & Nett Bagi Hasil -> Hijau
+        elif kol in (KOLOM_RUMUS + ['Gaji Teknisi']):
             c.fill = head_fill_hijau
         # 4. Header Standar -> Biru Tua
         else:
@@ -941,9 +941,9 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
         for j in range(1, n_kol + 1):
             ws.cell(row=r, column=j).border = Border(bottom=thin)
 
-        # 4. Inputan Manual Potongan & Gaji Teknisi
+        # 4. Inputan Manual Potongan, Total Potongan, & Gaji Teknisi
         if kolom_gaji:
-            for kol in KOLOM_POTONGAN + KOLOM_CADANGAN + ['Gaji Teknisi']:
+            for kol in KOLOM_POTONGAN + KOLOM_CADANGAN + ['Total Potongan', 'Gaji Teknisi']:
                 ws.cell(row=r, column=df.columns.get_loc(kol) + 1).fill = \
                     PatternFill('solid', fgColor='FFF8E1')
             for kol, rumus in _rumus_gaji(df, r).items():
