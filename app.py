@@ -824,10 +824,9 @@ def _rumus_gaji(df, r):
     return {
         'Total Potongan':
             f"=SUM({kol(KOLOM_POTONGAN[0])}{r}:{kol(KOLOM_POTONGAN[-1])}{r})",
-        'Gaji Teknisi':
-            f"={kol('Bagi Hasil (Aturan)')}{r}-{kol('Total Potongan')}{r}",
+        # Gaji Teknisi dikosongkan (diisi manual)
         'Nett Bagi hasil':
-            f"={kol('Gaji Teknisi')}{r}-{kol('Cadangan 7 Tahun / bulan')}{r}",
+            f"={kol('Bagi Hasil (Aturan)')}{r}-{kol('Total Potongan')}{r}",
         'Total Cadangan 7 Tahun':
             f"={kol('Cadangan 7 Tahun / bulan')}{r}+{kol('Cadangan 7 Tahun')}{r}",
     }
@@ -848,17 +847,33 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
             ).font = Font(size=9, italic=True, color='555555')
 
     n_baris, n_kol = len(df), len(df.columns)
-    head_fill = PatternFill('solid', fgColor='1F3864')
-    head_font = Font(bold=True, color='FFFFFF', size=10)
+    head_fill_biru = PatternFill('solid', fgColor='1F3864')
+    head_fill_coklat = PatternFill('solid', fgColor='B45309')
+    head_fill_kuning = PatternFill('solid', fgColor='EAB308')
+    head_fill_hijau = PatternFill('solid', fgColor='166534')
+
+    head_font_putih = Font(bold=True, color='FFFFFF', size=10)
+    head_font_hitam = Font(bold=True, color='000000', size=10)
     thin = Side(style='thin', color='D9D9D9')
 
-    isian_fill = PatternFill('solid', fgColor='B45309')
-    rumus_fill = PatternFill('solid', fgColor='166534')
     for j, kol in enumerate(df.columns, start=1):
         c = ws.cell(row=4, column=j)
-        c.font = head_font
-        c.fill = (isian_fill if kol in (KOLOM_POTONGAN + KOLOM_CADANGAN)
-                  else rumus_fill if kol in KOLOM_RUMUS else head_fill)
+        c.font = head_font_putih
+
+        # 1. Warna Header Bagi Hasil -> Kuning
+        if kol.startswith('Bagi Hasil'):
+            c.fill = head_fill_kuning
+            c.font = head_font_hitam
+        # 2. Total Potongan & Gaji Teknisi -> Cokelat (Sama seperti Potongan/Simpanan Wajib)
+        elif kol in (KOLOM_POTONGAN + KOLOM_CADANGAN + ['Total Potongan', 'Gaji Teknisi']):
+            c.fill = head_fill_coklat
+        # 3. Kolom Rumus Lainnya -> Hijau
+        elif kol in KOLOM_RUMUS:
+            c.fill = head_fill_hijau
+        # 4. Header Standar -> Biru Tua
+        else:
+            c.fill = head_fill_biru
+
         c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         c.border = Border(bottom=Side(style='medium', color='1F3864'))
         lebar = max(len(str(kol)) + 2,
@@ -926,9 +941,9 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
         for j in range(1, n_kol + 1):
             ws.cell(row=r, column=j).border = Border(bottom=thin)
 
-        # 4. Rumus Penggajian & Potongan
+        # 4. Inputan Manual Potongan & Gaji Teknisi
         if kolom_gaji:
-            for kol in KOLOM_POTONGAN + KOLOM_CADANGAN:
+            for kol in KOLOM_POTONGAN + KOLOM_CADANGAN + ['Gaji Teknisi']:
                 ws.cell(row=r, column=df.columns.get_loc(kol) + 1).fill = \
                     PatternFill('solid', fgColor='FFF8E1')
             for kol, rumus in _rumus_gaji(df, r).items():
@@ -957,7 +972,8 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
             c.number_format = '0.0'
             c.font = Font(bold=True)
 
-    ws.freeze_panes = ws.cell(row=5, column=1)
+    # Freeze Pane: Bekukan Kolom A (Nama Teknisi) dan Baris 1-4 (Header)
+    ws.freeze_panes = ws.cell(row=5, column=2)
     if n_baris:
         ws.auto_filter.ref = f"A4:{get_column_letter(n_kol)}{4 + n_baris}"
 
