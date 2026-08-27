@@ -38,10 +38,6 @@ TARIF_DEFAULT_AWAL = 30.0
 TARIF_PEMBANDING_AWAL = 30.0
 LABEL_LAINNYA = 'Lainnya'
 
-# Teknisi dengan kesepakatan tarif berbeda dari tarif umum.
-# Kolom kosong (None) berarti mengikuti tarif umum untuk kualifikasi itu.
-# Kelompok pertama: Interface 20%, Normal 20%, Mati Total 22%, Lainnya 20%,
-# Promo ikut tarif umum.
 # Jasa yang tidak ikut dihitung bagi hasil (dicocokkan pada NAMA BARANG).
 POLA_JASA_DIKECUALIKAN = ['OPER GADGET']
 
@@ -194,10 +190,7 @@ def pilih_label_tarif(kw_str, urutan):
 
 
 def periode_gaji(bulan_gaji: int, tahun_gaji: int):
-    """Gaji bulan M dihitung dari 24 bulan (M-1) s/d 23 bulan M.
-
-    Contoh: gaji Juli 2026 -> 24 Juni 2026 s/d 23 Juli 2026.
-    """
+    """Gaji bulan M dihitung dari 24 bulan (M-1) s/d 23 bulan M."""
     m_akhir, th_akhir = bulan_gaji, tahun_gaji
     m_awal, th_awal = m_akhir - 1, th_akhir
     if m_awal < 1:
@@ -230,27 +223,20 @@ def daftar_periode_gaji(tgl_min, tgl_max):
 
 
 SALES_REQUIRED = ['TGL FAKTUR', 'NO FAKTUR', 'KATEGORI BARANG', 'NAMA BARANG',
-                  'QTY', 'TOTAL HARGA']          # CABANG boleh datang dari nama berkas
+                  'QTY', 'TOTAL HARGA']
 KOLOM_DIPAKAI = SALES_REQUIRED + ['CABANG', 'NAMA TEKNISI', 'NAMA TEKNISI (FINAL)',
                                  'KERUSAKAN UTAMA', 'KATEGORI PENJUALAN']
-# NO FAKTUR hanya unik DI DALAM satu cabang (nomor MF-FP.xxxx dipakai ulang di
-# cabang lain), jadi kunci duplikat wajib menyertakan CABANG. Baris kembar di
-# dalam satu berkas tetap dipertahankan — yang dibuang hanya kiriman ulang.
 KUNCI_DUPLIKAT = ['CABANG', 'NO FAKTUR', 'NAMA BARANG', 'QTY', 'TOTAL HARGA',
                   'TGL FAKTUR']
 LABEL_TANPA_CABANG = '(TANPA CABANG)'
 
-# Daftar cabang resmi. Nama berkas kiriman cabang biasanya terpotong
-# (mis. "001mflashklende") sehingga dicocokkan lewat awalan ke daftar ini.
 CABANG_KANONIK = [
     'BINTARA', 'CEGER', 'CIBINONG', 'CIBUBUR', 'CIKAMPEK', 'CILANGKAP', 'CINERE',
     'CONDET', 'DRAMAGA', 'JATIBENING', 'JATIMULYA', 'JATIWARINGIN', 'KARAWANG',
     'KLENDER', 'PEJATEN', 'RADJIMAN', 'SAWANGAN', 'WARBONG',
 ]
-# nama lain -> nama cabang resmi
 ALIAS_CABANG_AWAL = {'TELUK JAMBE': 'KARAWANG', 'TELUKJAMBE': 'KARAWANG'}
 
-# potongan kata yang dibuang saat menebak nama cabang
 NOISE_NAMA = {
     'RINCIAN', 'PENJUALAN', 'PENJUALANAN', 'DATA', 'LAPORAN', 'LAP', 'REKAP', 'JASA',
     'SALES', 'FAKTUR', 'INVOICE', 'PERIODE', 'BULAN', 'TAHUN', 'CABANG', 'CAB',
@@ -261,7 +247,7 @@ NOISE_NAMA = {
     'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER',
     'JAN', 'FEB', 'MAR', 'APR', 'JUN', 'JUL', 'AGU', 'AGS', 'SEP', 'OKT', 'NOV', 'DES',
 }
-AWALAN_BUANG = ('MFLASH', 'MFLSH', 'MFLAS')      # kode perusahaan di nama berkas
+AWALAN_BUANG = ('MFLASH', 'MFLSH', 'MFLAS')
 
 
 def _huruf(s) -> str:
@@ -269,14 +255,9 @@ def _huruf(s) -> str:
 
 
 def token_cabang(nama: str) -> str:
-    """Sisa nama berkas/sheet setelah angka, kode, dan kata umum dibuang.
-
-    'rincian_faktur_penjualan_001mflashklende_260818094705.xlsx' -> 'KLENDE'
-    'Rincian Faktur Penjualan' -> '' (semuanya kata umum)
-    """
     s = re.sub(r'\.(xlsx|xlsm|xls|csv|gz|txt)$', '', str(nama), flags=re.I)
-    s = re.sub(r'\.(csv|xlsx)$', '', s, flags=re.I)              # untuk nama .csv.gz
-    s = re.sub(r'\b[0-9a-f]{8,}\b', ' ', s, flags=re.I)          # buang kode acak/uuid
+    s = re.sub(r'\.(csv|xlsx)$', '', s, flags=re.I)
+    s = re.sub(r'\b[0-9a-f]{8,}\b', ' ', s, flags=re.I)
     s = re.sub(r'[\_\-\.\(\)\[\]#]+', ' ', s)
     s = re.sub(r'\d+', ' ', s)
     tok = []
@@ -290,7 +271,6 @@ def token_cabang(nama: str) -> str:
 
 
 def cocokkan_cabang(tok: str, kanonik, alias):
-    """Cocokkan token ke daftar cabang resmi. -> (nama_cabang, keterangan)."""
     t = _huruf(tok)
     if not t:
         return '', ''
@@ -308,18 +288,16 @@ def cocokkan_cabang(tok: str, kanonik, alias):
 
 
 def _cabang_dari_kolom(d: pd.DataFrame) -> str:
-    """Kalau kolom CABANG terisi seragam, pakai itu. '' kalau kosong/beragam."""
     if 'CABANG' not in d.columns:
         return ''
     v = d['CABANG'].dropna().astype(str).str.strip()
     v = v[(v != '') & (~v.str.upper().isin(['NAN', 'NONE']))]
     if v.empty:
         return ''
-    return '' if v.nunique() > 1 else v.iloc[0]     # beragam -> biarkan apa adanya
+    return '' if v.nunique() > 1 else v.iloc[0]
 
 
 def _potongan_berkas(nama_berkas: str, isi: bytes):
-    """Pecah satu berkas jadi (DataFrame, nama_bagian). Bagian = sheet untuk xlsx."""
     low = str(nama_berkas).lower()
     if low.endswith('.gz'):
         yield pd.read_csv(io.BytesIO(isi), compression='gzip'), ''
@@ -327,11 +305,11 @@ def _potongan_berkas(nama_berkas: str, isi: bytes):
         yield pd.read_csv(io.BytesIO(isi)), ''
     else:
         xls = None
-        for mesin in ('calamine', 'openpyxl'):      # calamine jauh lebih cepat
+        for mesin in ('calamine', 'openpyxl'):
             try:
                 xls = pd.ExcelFile(io.BytesIO(isi), engine=mesin)
                 break
-            except Exception:                        # noqa: BLE001, PERF203
+            except Exception:
                 continue
         if xls is None:
             xls = pd.ExcelFile(io.BytesIO(isi), engine='openpyxl')
@@ -343,17 +321,12 @@ def _potongan_berkas(nama_berkas: str, isi: bytes):
 
 @st.cache_data(show_spinner="Membaca berkas penjualan...")
 def baca_mentah(items: tuple, kanonik: tuple, alias_items: tuple):
-    """Gabung banyak berkas jadi satu tabel mentah + catatan asal tiap potongan.
-
-    items: tuple of (nama_berkas, bytes). Nama cabang dicari berurutan:
-    kolom CABANG -> nama sheet -> nama berkas -> kosong (diisi manual di sidebar).
-    """
     alias = dict(alias_items)
     frames, catatan, gagal = [], [], []
     for nama_berkas, isi in items:
         try:
             potongan = list(_potongan_berkas(nama_berkas, isi))
-        except Exception as e:                                   # noqa: BLE001
+        except Exception as e:
             gagal.append(f"{nama_berkas}: {e}")
             continue
         if not potongan:
@@ -366,7 +339,7 @@ def baca_mentah(items: tuple, kanonik: tuple, alias_items: tuple):
                              + (f" [{bagian}]" if bagian else "")
                              + ": kolom tidak ditemukan — " + ", ".join(kurang))
                 continue
-            d = d[[c for c in KOLOM_DIPAKAI if c in d.columns]].copy()   # hemat memori
+            d = d[[c for c in KOLOM_DIPAKAI if c in d.columns]].copy()
 
             cab, asal, ket = _cabang_dari_kolom(d), 'kolom CABANG', ''
             if not cab and bagian:
@@ -401,7 +374,6 @@ def baca_mentah(items: tuple, kanonik: tuple, alias_items: tuple):
             pd.DataFrame(catatan), gagal)
 
 
-# isian yang dianggap kosong pada kolom nama teknisi
 NAMA_KOSONG = {'', '-', '--', 'NAN', 'NONE', 'NULL', '<NA>', 'N/A', 'NA', '#N/A',
                'N.A', 'N.A.', '#VALUE!', '#REF!', 'TIDAK ADA'}
 
@@ -413,7 +385,6 @@ def _nama_teknisi_bersih(kolom: pd.Series) -> pd.Series:
 
 
 def bersihkan(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalisasi kolom + saring baris kategori JASA (dipakai semua sumber data)."""
     if df.empty:
         return df
     df = df.copy()
@@ -431,7 +402,7 @@ def bersihkan(df: pd.DataFrame) -> pd.DataFrame:
         else pd.Series(index=df.index, dtype=object)
     asli = df['NAMA TEKNISI'] if 'NAMA TEKNISI' in df.columns \
         else pd.Series(index=df.index, dtype=object)
-    # acuan utama kolom FINAL; kalau kosong / N/A baru pakai NAMA TEKNISI
+
     tek = _nama_teknisi_bersih(fin)
     df['TEKNISI'] = tek.where(tek != '', _nama_teknisi_bersih(asli))
     df.loc[df['TEKNISI'] == '', 'TEKNISI'] = 'TIDAK ADA TEKNISI'
@@ -449,7 +420,6 @@ def bersihkan(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner="Membaca data penjualan...")
 def load_sales(file_bytes: bytes, source_kind: str) -> pd.DataFrame:
-    """Loader berkas tunggal (dipakai untuk data bawaan repo)."""
     nama = {'csv_gz': 'penjualan.csv.gz', 'csv': 'penjualan.csv'}.get(source_kind, 'penjualan.xlsx')
     mentah, _, gagal = baca_mentah(((nama, file_bytes),), tuple(CABANG_KANONIK),
                                    tuple(ALIAS_CABANG_AWAL.items()))
@@ -459,33 +429,30 @@ def load_sales(file_bytes: bytes, source_kind: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar: sumber data (mendukung banyak berkas — satu kiriman per cabang)
+# Sidebar: sumber data (terbatas 1 file saja)
 # ---------------------------------------------------------------------------
 st.sidebar.title("📁 Sumber Data")
-ups = st.sidebar.file_uploader(
-    "Upload data penjualan — bisa banyak berkas sekaligus",
-    type=['xlsx', 'xlsm', 'gz', 'csv'], accept_multiple_files=True,
+up = st.sidebar.file_uploader(
+    "Upload data penjualan",
+    type=['xlsx', 'xlsm', 'gz', 'csv'],
+    accept_multiple_files=False,  # Batasi hanya 1 file saja
     key='uploader_cabang',
-    help="Kirim satu berkas per cabang (boleh 25 sekaligus), atau satu berkas gabungan. "
+    help="Upload 1 berkas penjualan gabungan. "
          "Kalau kosong, dipakai berkas bawaan data/penjualan.csv.gz.")
 
 buang_duplikat = st.sidebar.checkbox(
-    "Buang kiriman ulang (duplikat antar berkas)", value=True, key='opsi_dedup',
-    help="Kalau satu cabang mengirim berkas dua kali, baris yang sama persis "
-         "(cabang, no faktur, barang, qty, total, tanggal) hanya dihitung sekali — "
-         "yang dipakai berkas terakhir. Baris kembar di dalam satu berkas tetap utuh.")
+    "Buang kiriman ulang (duplikat)", value=True, key='opsi_dedup',
+    help="Baris yang sama persis (cabang, no faktur, barang, qty, total, tanggal) hanya dihitung sekali.")
 
 with st.sidebar.expander("🏷️ Daftar & alias cabang", expanded=False):
-    st.caption("Nama berkas kiriman cabang sering terpotong (mis. `001mflashklende`). "
-               "Potongan itu dicocokkan ke daftar di bawah lewat awalan nama.")
+    st.caption("Nama berkas/sheet dicocokkan ke daftar di bawah lewat awalan nama.")
     st.session_state.setdefault('teks_kanonik', "\n".join(CABANG_KANONIK))
     st.session_state.setdefault(
         'teks_alias', "\n".join(f"{k} = {v}" for k, v in ALIAS_CABANG_AWAL.items()))
     teks_kanonik = st.text_area(
         "Daftar cabang resmi (satu per baris)", height=150, key='teks_kanonik')
     teks_alias = st.text_area(
-        "Alias — format `nama lain = CABANG RESMI`", height=100, key='teks_alias',
-        help="Contoh: TELUK JAMBE = KARAWANG")
+        "Alias — format `nama lain = CABANG RESMI`", height=100, key='teks_alias')
 
 kanonik = tuple(dict.fromkeys(
     b.strip().upper() for b in teks_kanonik.splitlines() if b.strip()))
@@ -497,16 +464,15 @@ alias_items = tuple(
 jasa_all = pd.DataFrame()
 catatan_berkas = pd.DataFrame()
 try:
-    if ups:
-        items = tuple((u.name, u.getvalue()) for u in ups)
+    if up is not None:
+        items = ((up.name, up.getvalue()),)
         mentah, catatan_berkas, gagal = baca_mentah(items, kanonik, alias_items)
         mentah = mentah.copy()
 
-        # --- koreksi manual untuk potongan yang cabangnya tak terdeteksi ---
         if not mentah.empty and not catatan_berkas.empty:
             perlu = catatan_berkas['Cabang'] == LABEL_TANPA_CABANG
             if perlu.any():
-                st.sidebar.warning(f"{int(perlu.sum())} berkas belum ketahuan cabangnya — "
+                st.sidebar.warning(f"{int(perlu.sum())} bagian belum ketahuan cabangnya — "
                                    "isi manual di bawah.")
                 with st.sidebar.form('form_cabang'):
                     isian = {}
@@ -531,8 +497,6 @@ try:
         if not mentah.empty and buang_duplikat and \
                 all(c in mentah.columns for c in KUNCI_DUPLIKAT):
             sebelum = len(mentah)
-            # nomor urut kemunculan di dalam satu berkas -> baris kembar yang memang
-            # ada di berkas aslinya tidak ikut terbuang, hanya kiriman ulang
             mentah['__N__'] = mentah.groupby(KUNCI_DUPLIKAT + ['__BERKAS__'],
                                              dropna=False).cumcount()
             mentah = mentah.drop_duplicates(subset=KUNCI_DUPLIKAT + ['__N__'],
@@ -544,35 +508,24 @@ try:
             st.sidebar.error("Berkas dilewati:\n\n- " + "\n- ".join(gagal))
         if not jasa_all.empty:
             st.sidebar.success(
-                f"{len(ups)} berkas · {jasa_all['CABANG'].nunique()} cabang · "
+                f"1 berkas · {jasa_all['CABANG'].nunique()} cabang · "
                 f"{len(jasa_all):,} baris jasa"
                 + (f" · {n_dup:,} baris duplikat dibuang" if n_dup else ""))
     elif DEFAULT_SALES_PATH.exists():
         jasa_all = load_sales(DEFAULT_SALES_PATH.read_bytes(), 'csv_gz')
         st.sidebar.info("Memakai data bawaan repo.")
-except Exception as e:  # noqa: BLE001
+except Exception as e:
     st.sidebar.error(f"Data tidak terbaca: {e}")
 
 if not catatan_berkas.empty:
-    with st.sidebar.expander(f"📄 Rincian {len(catatan_berkas)} berkas terbaca", expanded=True):
+    with st.sidebar.expander(f"📄 Rincian berkas terbaca", expanded=True):
         st.dataframe(catatan_berkas, hide_index=True, use_container_width=True)
-        ragu = catatan_berkas[catatan_berkas['Catatan'].astype(str).str.startswith(
-            ('ambigu', 'di luar daftar', 'perlu'))]
-        if len(ragu):
-            st.warning("Periksa berkas ini — nama cabangnya belum pasti: "
-                       + ", ".join(ragu['Berkas'].astype(str)))
-        ganda = (catatan_berkas[catatan_berkas['Cabang'] != LABEL_TANPA_CABANG]
-                 .groupby('Cabang')['Berkas'].nunique())
-        ganda = ganda[ganda > 1]
-        if len(ganda):
-            st.info("Cabang dengan lebih dari satu berkas: " + ", ".join(ganda.index))
 
 st.title("🧰 Bagi Hasil Teknisi")
 
 if jasa_all.empty:
     st.info(
-        "Data belum tersedia. Letakkan file **data/penjualan.csv.gz** di folder aplikasi, "
-        "atau upload file penjualan lewat panel kiri.\n\n"
+        "Data belum tersedia. Upload file penjualan lewat panel kiri.\n\n"
         "Format yang dibutuhkan: data faktur penjualan dengan kolom TGL FAKTUR, NO FAKTUR, "
         "KATEGORI BARANG, NAMA BARANG, NAMA TEKNISI (FINAL), QTY, TOTAL HARGA, dan CABANG "
         "(atau satu sheet per cabang bila berupa .xlsx)."
@@ -608,12 +561,10 @@ with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", e
     c5, c6, c7 = st.columns([1, 1, 1.6])
     with c5:
         tarif_lain = st.number_input(
-            "Tanpa kata kunci (%)", 0.0, 100.0, TARIF_DEFAULT_AWAL, 1.0, key='t_lain',
-            help="Untuk item seperti JASA REPAIR / JASA BATERAI yang tidak mengandung kata kunci.")
+            "Tanpa kata kunci (%)", 0.0, 100.0, TARIF_DEFAULT_AWAL, 1.0, key='t_lain')
     with c6:
         tarif_flat = st.number_input(
-            "Tarif pembanding (%)", 0.0, 100.0, TARIF_PEMBANDING_AWAL, 1.0, key='t_flat',
-            help="Skema pembanding: seluruh omzet jasa dikali tarif ini.")
+            "Tarif pembanding (%)", 0.0, 100.0, TARIF_PEMBANDING_AWAL, 1.0, key='t_flat')
     with c7:
         prioritas = st.selectbox(
             "Kalau satu nama mengandung 2 kata kunci, yang menang:",
@@ -625,27 +576,17 @@ with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", e
     with k1:
         teks_kecuali = st.text_area(
             "Jasa yang tidak dihitung (satu pola per baris)",
-            value="\n".join(POLA_JASA_DIKECUALIKAN), height=90, key='teks_kecuali',
-            help="Dicocokkan pada NAMA BARANG, tidak peduli huruf besar/kecil. "
-                 "Baris jasa yang cocok dikeluarkan dari seluruh perhitungan.")
+            value="\n".join(POLA_JASA_DIKECUALIKAN), height=90, key='teks_kecuali')
     with k2:
         cab_kerusakan = st.multiselect(
             "Cabang yang kualifikasinya dibaca dari KERUSAKAN UTAMA",
             options=sorted(jasa_all['CABANG'].dropna().unique().tolist()),
             default=[c for c in CABANG_ACUAN_KERUSAKAN
                      if c in set(jasa_all['CABANG'].dropna())],
-            key='cab_kerusakan',
-            help="Untuk cabang yang penamaan barangnya belum memakai kata kunci. "
-                 "Interface: LCD (service HP), baterai, SSD, RAM, software (service "
-                 "laptop). Mati Total: kerusakan 'mati total'. Sisanya Normal.")
+            key='cab_kerusakan')
 
     st.divider()
     st.markdown("**Tarif khusus per teknisi**")
-    st.caption(
-        "Teknisi di tabel ini memakai persentase sendiri; kolom yang dikosongkan "
-        "ikut tarif umum di atas. Nama dicocokkan sama persis atau lewat awalan, "
-        "jadi `IRVAN SYAHRONI` juga kena untuk `IRVAN SYAHRONI CINERE`. "
-        "Baris bisa ditambah/dihapus langsung di tabel.")
     if 'tabel_khusus' not in st.session_state:
         st.session_state['tabel_khusus'] = tarif_khusus_awal()
     tabel_khusus = st.data_editor(
@@ -704,31 +645,9 @@ for kunci, tar in khusus.items():
         m = (jasa_all['TARIF_KHUSUS'] == kunci) & (jasa_all['TARIF_LABEL'] == lbl)
         jasa_all.loc[m, 'TARIF'] = frac
         n_khusus += int(m.sum())
-tanpa_padanan = sorted(set(khusus) - set(peta_nama.values()))
 
 jasa_all['BAGI_HASIL'] = jasa_all['TOTAL HARGA'] * jasa_all['TARIF']
 jasa_all['FLAT'] = jasa_all['TOTAL HARGA'] * (tarif_flat / 100.0)
-
-st.caption(
-    "**Tarif aktif:** " +
-    " · ".join(f"{k} {v:.0f}%" for k, v in tarif_input.items()) +
-    f" · Lainnya {tarif_lain:.0f}% · pembanding flat {tarif_flat:.0f}%"
-    f" · prioritas bentrok: {prioritas}"
-)
-if n_kecuali:
-    st.caption(f"**Dikecualikan:** {n_kecuali:,} baris jasa "
-               f"({', '.join(pola_kecuali)}) senilai {rp(omzet_kecuali)} "
-               "tidak ikut dihitung.")
-if cab_kerusakan:
-    st.caption("**Acuan KERUSAKAN UTAMA** dipakai untuk cabang: "
-               + ", ".join(cab_kerusakan) + ".")
-if khusus:
-    st.caption(
-        f"**Tarif khusus:** {len(khusus)} teknisi terdaftar, "
-        f"{len(set(peta_nama.values()))} ketemu di data dan mempengaruhi "
-        f"{n_khusus:,} baris jasa."
-        + (f" Belum ada padanannya di data: {', '.join(tanpa_padanan)}."
-           if tanpa_padanan else ""))
 
 # ---------------------------------------------------------------------------
 # Filter periode & cabang
@@ -765,9 +684,6 @@ else:
 
 jasa_tampil = jasa[jasa['TEKNISI'] != 'TIDAK ADA TEKNISI'] if sembunyikan else jasa
 
-st.markdown(f"**Rentang dihitung:** {periode_txt}"
-            + (f" · cabang **{f_cabang}**" if f_cabang != 'Semua Cabang' else ""))
-
 if jasa.empty:
     st.warning("Tidak ada transaksi jasa pada periode/cabang tersebut.")
     st.stop()
@@ -781,20 +697,6 @@ fl = jasa['FLAT'].sum()
 selisih = bh - fl
 n_tek = jasa.loc[jasa['TEKNISI'] != 'TIDAK ADA TEKNISI', 'TEKNISI'].nunique()
 tanpa_nama = jasa.loc[jasa['TEKNISI'] == 'TIDAK ADA TEKNISI', 'TOTAL HARGA'].sum()
-
-n_kw = (jasa['TARIF_LABEL'] != LABEL_LAINNYA).sum()
-if n_kw == 0:
-    sama = abs(tarif_lain - tarif_flat) < 1e-9
-    st.warning(
-        "Pada periode ini **tidak ada item jasa yang mengandung kata kunci** "
-        "(Interface / Normal / Mati Total / Promo) — semuanya memakai penamaan lama "
-        f"seperti `JASA REPAIR`, sehingga kena tarif {tarif_lain:.0f}%"
-        + (f", dan karena pembanding juga {tarif_flat:.0f}% kedua skema jadi **sama persis**."
-           if sama else ".")
-        + " Penamaan berkata kunci baru mulai dipakai sekitar Juli 2026.")
-elif n_kw < len(jasa) * 0.5:
-    st.info(f"Baru **{n_kw:,} dari {len(jasa):,} baris** ({n_kw/len(jasa)*100:.0f}%) "
-            "memakai penamaan berkata kunci; sisanya kena tarif tanpa-kata-kunci.")
 
 st.markdown(kpi_html([
     {'label': 'Omzet Jasa', 'value': rp(omzet), 'sub': f"{len(jasa):,} baris",
@@ -825,11 +727,6 @@ lbl_flat = f'Pembanding {tarif_flat:.0f}%'
 # Rekap utama: per Teknisi x Cabang
 # ---------------------------------------------------------------------------
 st.markdown("### Rekap Bagi Hasil per Teknisi & Cabang")
-st.caption(
-    "Dipecah per cabang karena sebagian teknisi bekerja di lebih dari satu cabang, "
-    "sehingga bagi hasilnya bisa dibebankan ke cabang yang tepat."
-)
-
 rek = (jasa_tampil.groupby(['TEKNISI', 'CABANG'], as_index=False)
        .agg(Baris=('TOTAL HARGA', 'size'),
             Omzet_Jasa=('TOTAL HARGA', 'sum'),
@@ -857,50 +754,11 @@ st.dataframe(
         'Selisih': 'Rp {:,.0f}'}),
     use_container_width=True, height=460, hide_index=True, key='tabel_rekap')
 
-# --- unduhan: wajib memuat Nama Teknisi, Cabang, Bagi Hasil (Aturan) ---
-unduh = rek_show[['Nama Teknisi', 'Cabang', 'Bagi Hasil (Aturan)',
-                  'Omzet Jasa', lbl_flat, 'Selisih', 'Baris', 'Efektif %']].copy()
-for c in ['Bagi Hasil (Aturan)', 'Omzet Jasa', lbl_flat, 'Selisih']:
-    unduh[c] = unduh[c].round(0).astype('int64')
-
-u1, u2 = st.columns(2)
-with u1:
-    st.download_button(
-        "⬇️ Unduh rekap per Teknisi & Cabang (CSV)",
-        data=unduh.to_csv(index=False).encode('utf-8-sig'),
-        file_name=f"bagi_hasil_teknisi_cabang_{tag_file}.csv",
-        mime="text/csv", use_container_width=True, key='unduh_rekap')
-with u2:
-    gab = (jasa_tampil.groupby('TEKNISI', as_index=False)
-           .agg(Omzet_Jasa=('TOTAL HARGA', 'sum'),
-                Bagi_Hasil=('BAGI_HASIL', 'sum'),
-                Flat=('FLAT', 'sum')))
-    gab['Cabang'] = gab['TEKNISI'].map(
-        jasa_tampil.groupby('TEKNISI')['CABANG']
-        .apply(lambda s: ', '.join(sorted(s.unique()))))
-    gab['Selisih'] = gab['Bagi_Hasil'] - gab['Flat']
-    gab = gab.rename(columns={'TEKNISI': 'Nama Teknisi', 'Omzet_Jasa': 'Omzet Jasa',
-                              'Bagi_Hasil': 'Bagi Hasil (Aturan)', 'Flat': lbl_flat})
-    gab = gab[['Nama Teknisi', 'Cabang', 'Bagi Hasil (Aturan)', 'Omzet Jasa',
-               lbl_flat, 'Selisih']].sort_values('Bagi Hasil (Aturan)', ascending=False)
-    for c in ['Bagi Hasil (Aturan)', 'Omzet Jasa', lbl_flat, 'Selisih']:
-        gab[c] = gab[c].round(0).astype('int64')
-    st.download_button(
-        "⬇️ Unduh rekap per Teknisi (digabung semua cabang)",
-        data=gab.to_csv(index=False).encode('utf-8-sig'),
-        file_name=f"bagi_hasil_teknisi_{tag_file}.csv",
-        mime="text/csv", use_container_width=True, key='unduh_gab')
-
-st.caption("Kedua berkas memuat kolom **Nama Teknisi**, **Cabang**, dan "
-           "**Bagi Hasil (Aturan)**, ditambah omzet, pembanding, dan selisihnya.")
-
 # ---------------------------------------------------------------------------
-# Unduhan Excel (multi-sheet: rekap + satu sheet per cabang)
+# Unduhan Excel (Hanya N Sheet per Cabang + Rumus Excel Dinamis)
 # ---------------------------------------------------------------------------
 KATEGORI_ORDER = ['Interface', 'Normal', 'Mati Total', 'Promo', LABEL_LAINNYA]
 
-# Kolom penggajian pada sheet per cabang. Sembilan kolom potongan dikosongkan
-# untuk diisi finance; sisanya berisi rumus Excel yang ikut menyesuaikan.
 KOLOM_POTONGAN = ['Potongan Refund', 'Potongan AR', 'Potongan Kasbon', 'Keterlambatan',
                   'Potongan Minus Audit', 'Potongan Audit Compliance',
                   'Biaya Pendaftaran Koperasi', 'Simpanan Pokok', 'Simpanan Wajib']
@@ -912,7 +770,6 @@ KOLOM_GAJI = (KOLOM_POTONGAN + ['Total Potongan', 'Gaji Teknisi', 'Nett Bagi has
 
 
 def _sheet_name(nama, terpakai):
-    """Nama sheet Excel yang aman: <=31 karakter, tanpa karakter terlarang, unik."""
     s = str(nama)
     for ch in '[]:*?/\\':
         s = s.replace(ch, '-')
@@ -928,7 +785,6 @@ def _sheet_name(nama, terpakai):
 
 
 def rekap_kualifikasi(df, keys):
-    """Rekap omzet & bagi hasil, dipecah per kualifikasi (Interface/Normal/Mati Total/...)."""
     base = (df.groupby(keys, as_index=False)
               .agg(Baris=('TOTAL HARGA', 'size'),
                    Omzet=('TOTAL HARGA', 'sum'),
@@ -960,7 +816,6 @@ def rekap_kualifikasi(df, keys):
 
 
 def _rumus_gaji(df, r):
-    """Rumus Excel kolom penggajian untuk baris ke-r (1-indexed di worksheet)."""
     from openpyxl.utils import get_column_letter as L
 
     def kol(nama):
@@ -997,8 +852,8 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
     head_font = Font(bold=True, color='FFFFFF', size=10)
     thin = Side(style='thin', color='D9D9D9')
 
-    isian_fill = PatternFill('solid', fgColor='B45309')      # coklat: diisi manual
-    rumus_fill = PatternFill('solid', fgColor='166534')       # hijau: rumus otomatis
+    isian_fill = PatternFill('solid', fgColor='B45309')
+    rumus_fill = PatternFill('solid', fgColor='166534')
     for j, kol in enumerate(df.columns, start=1):
         c = ws.cell(row=4, column=j)
         c.font = head_font
@@ -1017,11 +872,51 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
     idx_baris = (df.columns.get_loc('Baris') + 1) if 'Baris' in df.columns else None
     idx_pct = (df.columns.get_loc('Efektif %') + 1) if 'Efektif %' in df.columns else None
 
+    def kol_letter(nama_kolom):
+        return get_column_letter(df.columns.get_loc(nama_kolom) + 1)
+
     for i in range(n_baris):
         r = 5 + i
         if i % 2 == 1:
             for j in range(1, n_kol + 1):
                 ws.cell(row=r, column=j).fill = PatternFill('solid', fgColor='F4F7FB')
+
+        # 1. Rumus Bagi Hasil per Kategori
+        tek_nama = df.iloc[i].get('Nama Teknisi', '')
+        kunci_tek = peta_nama.get(tek_nama)
+        for k in KATEGORI_ORDER:
+            omzet_k = f"Omzet {k}"
+            bh_k = f"Bagi Hasil {k}"
+            if omzet_k in df.columns and bh_k in df.columns:
+                tar_frac = peta_tarif.get(k, 0.3)
+                if kunci_tek and kunci_tek in khusus and k in khusus[kunci_tek]:
+                    tar_frac = khusus[kunci_tek][k]
+                ws.cell(row=r, column=df.columns.get_loc(bh_k) + 1,
+                        value=f"={kol_letter(omzet_k)}{r}*{tar_frac}")
+
+        # 2. Rumus Omzet Total & Bagi Hasil Total
+        if 'Omzet Jasa (Total)' in df.columns and 'Omzet Interface' in df.columns:
+            ws.cell(row=r, column=df.columns.get_loc('Omzet Jasa (Total)') + 1,
+                    value=f"=SUM({kol_letter('Omzet Interface')}{r}:{kol_letter('Omzet Lainnya')}{r})")
+
+        if 'Bagi Hasil (Aturan)' in df.columns and 'Bagi Hasil Interface' in df.columns:
+            ws.cell(row=r, column=df.columns.get_loc('Bagi Hasil (Aturan)') + 1,
+                    value=f"=SUM({kol_letter('Bagi Hasil Interface')}{r}:{kol_letter('Bagi Hasil Lainnya')}{r})")
+
+        # 3. Rumus Pembanding Flat, Selisih, dan Efektif %
+        if lbl_flat in df.columns and 'Omzet Jasa (Total)' in df.columns:
+            ws.cell(row=r, column=df.columns.get_loc(lbl_flat) + 1,
+                    value=f"={kol_letter('Omzet Jasa (Total)')}{r}*{tarif_flat/100}")
+
+        if 'Selisih' in df.columns and 'Bagi Hasil (Aturan)' in df.columns and lbl_flat in df.columns:
+            ws.cell(row=r, column=df.columns.get_loc('Selisih') + 1,
+                    value=f"={kol_letter('Bagi Hasil (Aturan)')}{r}-{kol_letter(lbl_flat)}{r}")
+
+        if 'Efektif %' in df.columns and 'Omzet Jasa (Total)' in df.columns and 'Bagi Hasil (Aturan)' in df.columns:
+            ws.cell(row=r, column=df.columns.get_loc('Efektif %') + 1,
+                    value=f"=IF({kol_letter('Omzet Jasa (Total)')}{r}=0,0,{kol_letter('Bagi Hasil (Aturan)')}{r}/{kol_letter('Omzet Jasa (Total)')}{r}*100)")
+
+        # Format cell & border
         for j in idx_rp:
             ws.cell(row=r, column=j).number_format = '#,##0'
         if idx_baris:
@@ -1030,6 +925,8 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
             ws.cell(row=r, column=idx_pct).number_format = '0.0'
         for j in range(1, n_kol + 1):
             ws.cell(row=r, column=j).border = Border(bottom=thin)
+
+        # 4. Rumus Penggajian & Potongan
         if kolom_gaji:
             for kol in KOLOM_POTONGAN + KOLOM_CADANGAN:
                 ws.cell(row=r, column=df.columns.get_loc(kol) + 1).fill = \
@@ -1038,7 +935,7 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
                 sel = ws.cell(row=r, column=df.columns.get_loc(kol) + 1, value=rumus)
                 sel.number_format = '#,##0'
 
-    # baris TOTAL
+    # 5. Baris TOTAL Paling Bawah
     if n_baris:
         rt = 5 + n_baris
         ws.cell(row=rt, column=1, value='TOTAL')
@@ -1066,10 +963,9 @@ def _tulis_sheet(writer, df, nama_sheet, judul, kolom_gaji=False):
 
 
 def buat_excel(df_sumber):
-    """Workbook: Ringkasan + Rekap Teknisi & Cabang + Rekap per Cabang + sheet per cabang."""
+    """Workbook: Hanya menghasilkan N sheet per cabang."""
     buf = io.BytesIO()
 
-    # normalisasi kunci supaya tidak ada baris yang hilang saat groupby
     d = df_sumber.copy()
     d['TEKNISI'] = (d['TEKNISI'].fillna('TIDAK ADA TEKNISI').astype(str).str.strip()
                     .replace({'': 'TIDAK ADA TEKNISI', 'nan': 'TIDAK ADA TEKNISI',
@@ -1077,18 +973,8 @@ def buat_excel(df_sumber):
     d['CABANG'] = (d['CABANG'].fillna('(TANPA CABANG)').astype(str).str.strip()
                    .replace({'': '(TANPA CABANG)', 'nan': '(TANPA CABANG)'}))
 
-    rek_all = rekap_kualifikasi(d, ['TEKNISI', 'CABANG'])
-    rek_cab = rekap_kualifikasi(d, ['CABANG'])
-    rek_tek = rekap_kualifikasi(d, ['TEKNISI'])
-
     with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-        _tulis_sheet(writer, rek_all, 'Rekap Teknisi & Cabang',
-                     'Rekap Bagi Hasil per Teknisi & Cabang')
-        _tulis_sheet(writer, rek_tek, 'Rekap Teknisi',
-                     'Rekap Bagi Hasil per Teknisi (gabungan semua cabang)')
-        _tulis_sheet(writer, rek_cab, 'Rekap Cabang', 'Rekap Bagi Hasil per Cabang')
-
-        terpakai = {'rekap teknisi & cabang', 'rekap teknisi', 'rekap cabang'}
+        terpakai = set()
         for cab in sorted(d['CABANG'].unique()):
             sub = d[d['CABANG'] == cab]
             if sub.empty:
@@ -1104,276 +990,13 @@ def buat_excel(df_sumber):
 
 
 # ---------------------------------------------------------------------------
-# Slip gaji PDF per cabang
+# UI Tombol Download Excel
 # ---------------------------------------------------------------------------
-DIR_ASET = Path(__file__).parent / "assets"
-LOGO_MADINAH = DIR_ASET / "logo-madinah.png"
-LOGO_MFLASH = DIR_ASET / "logo-mflash.png"
-
-# baris potongan pada slip -> kolom Excel yang dijumlahkan
-PETA_POTONGAN_SLIP = [
-    ('Potongan Kasbon', ['Potongan Kasbon']),
-    ('Potongan Refund', ['Potongan Refund']),
-    ('Potongan AR', ['Potongan AR']),
-    ('Potongan Terlambat', ['Keterlambatan']),
-    ('Potongan Minus Audit', ['Potongan Minus Audit']),
-    ('Potongan Audit Compliance', ['Potongan Audit Compliance']),
-    ('Potongan Koperasi', ['Biaya Pendaftaran Koperasi', 'Simpanan Pokok',
-                           'Simpanan Wajib']),
-]
-
-
-def rupiah(v) -> str:
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        v = 0.0
-    s = f"{abs(v):,.0f}".replace(",", ".")
-    return ("Rp (" + s + ")") if v < 0 else ("Rp " + s)
-
-
-@st.cache_data(show_spinner="Membaca berkas potongan...")
-def baca_potongan(isi: bytes):
-    """Ambil nilai potongan dari Excel hasil unduhan yang sudah diisi finance.
-
-    -> {(CABANG, NAMA TEKNISI): {nama_kolom: nilai}}
-    """
-    hasil, terbaca = {}, 0
-    xls = pd.ExcelFile(io.BytesIO(isi), engine='openpyxl')
-    for sheet in xls.sheet_names:
-        try:
-            d = xls.parse(sheet, header=3)
-        except Exception:                                     # noqa: BLE001
-            continue
-        if 'Nama Teknisi' not in d.columns or 'Cabang' not in d.columns:
-            continue
-        if not any(k in d.columns for k in KOLOM_POTONGAN):
-            continue
-        d = d[d['Nama Teknisi'].notna() & (d['Nama Teknisi'].astype(str) != 'TOTAL')]
-        for _, r in d.iterrows():
-            kunci = (str(r['Cabang']).strip().upper(),
-                     str(r['Nama Teknisi']).strip().upper())
-            isi_baris = {}
-            for kol in KOLOM_POTONGAN + KOLOM_CADANGAN:
-                v = r.get(kol)
-                isi_baris[kol] = 0.0 if v is None or pd.isna(v) else float(v)
-            hasil[kunci] = isi_baris
-            terbaca += 1
-    return hasil, terbaca
-
-
-def _baris_slip(sub, potongan):
-    """Susun angka satu slip dari transaksi seorang teknisi di satu cabang."""
-    per_kual = []
-    for lbl in KATEGORI_ORDER:
-        s = sub[sub['TARIF_LABEL'] == lbl]
-        if s.empty or s['TOTAL HARGA'].sum() == 0:
-            continue
-        omzet, bh = s['TOTAL HARGA'].sum(), s['BAGI_HASIL'].sum()
-        per_kual.append((lbl, omzet, bh / omzet if omzet else 0.0, bh))
-    bruto = sum(x[3] for x in per_kual)
-
-    pot = []
-    for label, kolom in PETA_POTONGAN_SLIP:
-        pot.append((label, sum(float(potongan.get(k, 0) or 0) for k in kolom)))
-    total_pot = sum(x[1] for x in pot)
-
-    return per_kual, bruto, pot, total_pot, bruto - total_pot
-
-
-def _gambar_slip(c, lebar, tinggi, nama, cabang, periode, angka, catatan):
-    from reportlab.lib.units import mm
-    from reportlab.lib.utils import ImageReader
-
-    per_kual, bruto, pot, total_pot, nett = angka
-    m = 18 * mm
-    y = tinggi - 14 * mm
-
-    if LOGO_MADINAH.exists():
-        c.drawImage(ImageReader(str(LOGO_MADINAH)), m, y - 20 * mm, width=20 * mm,
-                    height=20 * mm, mask='auto')
-    if LOGO_MFLASH.exists():
-        c.drawImage(ImageReader(str(LOGO_MFLASH)), lebar - m - 34 * mm, y - 20 * mm,
-                    width=34 * mm, height=24 * mm, mask='auto',
-                    preserveAspectRatio=True, anchor='ne')
-    y -= 26 * mm
-
-    c.setFillColorRGB(0.12, 0.22, 0.39)
-    c.setFont('Helvetica-Bold', 13)
-    c.drawCentredString(lebar / 2, y, 'SLIP BAGI HASIL TEKNISI MADINAH FLASH')
-    y -= 4 * mm
-    c.setLineWidth(1.2)
-    c.line(m, y, lebar - m, y)
-    y -= 9 * mm
-
-    c.setFillColorRGB(0, 0, 0)
-    c.setFont('Helvetica', 9.5)
-    for label, isi in [('Nama', nama), ('Jabatan', 'Teknisi'),
-                       ('Divisi', f'MFlash — {cabang}'), ('Periode', periode)]:
-        c.setFont('Helvetica-Bold', 9.5)
-        c.drawString(m, y, label)
-        c.setFont('Helvetica', 9.5)
-        c.drawString(m + 24 * mm, y, f': {isi}')
-        y -= 5.4 * mm
-    y -= 3 * mm
-
-    def judul_tabel(teks, kolom_kanan=True):
-        nonlocal y
-        c.setFillColorRGB(0.12, 0.22, 0.39)
-        c.rect(m, y - 5.6 * mm, lebar - 2 * m, 5.6 * mm, stroke=0, fill=1)
-        c.setFillColorRGB(1, 1, 1)
-        c.setFont('Helvetica-Bold', 8.5)
-        c.drawString(m + 2 * mm, y - 4 * mm, teks)
-        if kolom_kanan:
-            c.drawRightString(lebar - m - 46 * mm, y - 4 * mm, 'OMZET')
-            c.drawRightString(lebar - m - 30 * mm, y - 4 * mm, 'AKAD')
-            c.drawRightString(lebar - m - 2 * mm, y - 4 * mm, 'BAGI HASIL')
-        else:
-            c.drawRightString(lebar - m - 2 * mm, y - 4 * mm, 'JUMLAH')
-        c.setFillColorRGB(0, 0, 0)
-        y -= 9 * mm
-
-    judul_tabel('PENDAPATAN PER KUALIFIKASI')
-    c.setFont('Helvetica', 9)
-    if not per_kual:
-        c.drawString(m + 2 * mm, y, '(tidak ada transaksi jasa pada periode ini)')
-        y -= 5.4 * mm
-    for lbl, omzet, akad, bh in per_kual:
-        c.drawString(m + 2 * mm, y, lbl)
-        c.drawRightString(lebar - m - 46 * mm, y, rupiah(omzet))
-        c.drawRightString(lebar - m - 30 * mm, y,
-                          f'{akad*100:.1f}'.replace('.', ',') + '%')
-        c.drawRightString(lebar - m - 2 * mm, y, rupiah(bh))
-        y -= 5.4 * mm
-
-    y -= 1 * mm
-    c.setLineWidth(0.6)
-    c.line(lebar - m - 52 * mm, y + 1.5 * mm, lebar - m, y + 1.5 * mm)
-    y -= 3 * mm
-    c.setFont('Helvetica-Bold', 9.5)
-    c.drawString(m + 2 * mm, y, 'Total Bruto Bagi Hasil')
-    c.drawRightString(lebar - m - 2 * mm, y, rupiah(bruto))
-    y -= 9 * mm
-
-    judul_tabel('POTONGAN', kolom_kanan=False)
-    c.setFont('Helvetica', 9)
-    for label, nilai in pot:
-        c.drawString(m + 2 * mm, y, label)
-        c.drawRightString(lebar - m - 2 * mm, y, rupiah(nilai))
-        y -= 5.4 * mm
-    c.setLineWidth(0.6)
-    c.line(lebar - m - 52 * mm, y + 1.5 * mm, lebar - m, y + 1.5 * mm)
-    y -= 3 * mm
-    c.setFont('Helvetica-Bold', 9.5)
-    c.drawString(m + 2 * mm, y, 'Total Potongan')
-    c.drawRightString(lebar - m - 2 * mm, y, rupiah(total_pot))
-    y -= 9 * mm
-
-    c.setFillColorRGB(0.86, 0.92, 0.84)
-    c.rect(m, y - 3 * mm, lebar - 2 * m, 8 * mm, stroke=0, fill=1)
-    c.setFillColorRGB(0.05, 0.35, 0.15)
-    c.setFont('Helvetica-Bold', 11)
-    c.drawString(m + 2 * mm, y, 'NETT BAGI HASIL')
-    c.drawRightString(lebar - m - 2 * mm, y, rupiah(nett))
-    c.setFillColorRGB(0, 0, 0)
-    y -= 14 * mm
-
-    c.setFont('Helvetica-Bold', 8.5)
-    c.drawString(m, y, 'Catatan')
-    y -= 3 * mm
-    tinggi_kotak = 20 * mm
-    c.setLineWidth(0.6)
-    c.setStrokeColorRGB(0.7, 0.7, 0.7)
-    c.rect(m, y - tinggi_kotak, lebar - 2 * m, tinggi_kotak, stroke=1, fill=0)
-    c.setFont('Helvetica', 8.5)
-    baris_catatan = str(catatan or '').splitlines()
-    yy = y - 5 * mm
-    for baris in baris_catatan[:5]:
-        c.drawString(m + 2 * mm, yy, baris[:110])
-        yy -= 4.2 * mm
-    y -= tinggi_kotak + 12 * mm
-
-    c.setStrokeColorRGB(0, 0, 0)
-    c.setFont('Helvetica', 8.5)
-    for x, teks in ((m + 8 * mm, 'Teknisi'),
-                    (lebar / 2 - 12 * mm, 'Kepala Cabang'),
-                    (lebar - m - 40 * mm, 'Finance')):
-        c.line(x, y, x + 32 * mm, y)
-        c.drawCentredString(x + 16 * mm, y - 4.5 * mm, teks)
-
-
-def _nama_berkas_aman(teks, cadangan='TANPA-NAMA'):
-    aman = re.sub(r'[^A-Za-z0-9 _.-]', '-', str(teks)).strip(' .-')
-    return (aman[:80] or cadangan)
-
-
-def buat_pdf_teknisi(sub, nama, cabang, potongan, catatan, periode):
-    """Satu PDF berisi slip satu teknisi saja — siap dikirim ke orangnya."""
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas as rl_canvas
-
-    buf = io.BytesIO()
-    lebar, tinggi = A4
-    c = rl_canvas.Canvas(buf, pagesize=A4)
-    c.setTitle(f'Slip Bagi Hasil — {nama} ({cabang})')
-    c.setAuthor('Madinah Flash')
-    pot = potongan.get((str(cabang).strip().upper(), str(nama).strip().upper()), {})
-    _gambar_slip(c, lebar, tinggi, nama, cabang, periode,
-                 _baris_slip(sub, pot), catatan)
-    c.showPage()
-    c.save()
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def buat_zip_slip(df_sumber, potongan, catatan, periode, zip_per_cabang=False):
-    """Satu PDF per teknisi, dikumpulkan per cabang.
-
-    zip_per_cabang=False -> satu ZIP berisi folder per cabang (default)
-    zip_per_cabang=True  -> satu ZIP berisi berkas .zip terpisah tiap cabang
-    """
-    import zipfile
-
-    d = df_sumber.copy()
-    d['CABANG'] = d['CABANG'].astype(str).str.strip()
-    buf = io.BytesIO()
-    ringkas = []
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as luar:
-        for cab in sorted(d['CABANG'].unique()):
-            sub_cab = d[d['CABANG'] == cab]
-            if sub_cab.empty:
-                continue
-            folder = _nama_berkas_aman(cab, 'CABANG')
-            berkas = []
-            for nama in sorted(sub_cab['TEKNISI'].unique()):
-                isi = buat_pdf_teknisi(sub_cab[sub_cab['TEKNISI'] == nama], nama, cab,
-                                       potongan, catatan, periode)
-                berkas.append((f'{folder} - {_nama_berkas_aman(nama)}.pdf', isi))
-            if zip_per_cabang:
-                dalam = io.BytesIO()
-                with zipfile.ZipFile(dalam, 'w', zipfile.ZIP_DEFLATED) as z2:
-                    for nm, isi in berkas:
-                        z2.writestr(nm, isi)
-                luar.writestr(f'{folder}.zip', dalam.getvalue())
-            else:
-                for nm, isi in berkas:
-                    luar.writestr(f'{folder}/{nm}', isi)
-            ringkas.append({'Cabang': cab, 'Slip': len(berkas)})
-    buf.seek(0)
-    return buf.getvalue(), pd.DataFrame(ringkas)
-
-
 with st.container():
-    st.markdown("##### 📊 Unduh Excel (multi-sheet per cabang)")
+    st.markdown("##### 📊 Unduh Excel (1 sheet per cabang)")
     st.caption(
-        "Berisi kolom **Nama Teknisi**, **Cabang**, **Omzet**, rincian kualifikasi "
-        "**Interface / Normal / Mati Total / Promo / Lainnya** (omzet & bagi hasil "
-        "masing-masing), serta **Bagi Hasil**. Sheet: rekap gabungan, rekap per teknisi, "
-        "rekap per cabang, lalu satu sheet untuk tiap cabang.\n\n"
-        "Sheet per cabang ditambah kolom penggajian: sembilan kolom potongan "
-        "(header **coklat** = diisi manual) plus Total Potongan, Gaji Teknisi, "
-        "Nett Bagi Hasil, dan Total Cadangan 7 Tahun (header **hijau** = rumus Excel, "
-        "ikut berubah begitu potongannya diisi)."
+        "Mengunduh file Excel yang hanya berisi **$N$ sheet** (satu sheet untuk setiap cabang yang ada pada data).\n"
+        "Setiap sheet berisi rincian kualifikasi per teknisi dan rumus kalkulasi dinamis untuk bagi hasil & potongan gaji."
     )
     if st.button("🧾 Siapkan berkas Excel", key='siap_xlsx', use_container_width=True):
         with st.spinner("Menyusun workbook..."):
@@ -1386,178 +1009,3 @@ with st.container():
             file_name=f"bagi_hasil_teknisi_{st.session_state.get('xlsx_tag', tag_file)}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True, key='unduh_xlsx')
-
-
-with st.container():
-    st.markdown("##### 🧾 Unduh Slip Gaji PDF (satu PDF per teknisi)")
-    st.caption(
-        "Setiap teknisi dapat berkas PDF sendiri supaya gampang dikirim satu-satu, "
-        "dikelompokkan per cabang. Isinya: pendapatan dirinci per kualifikasi lengkap "
-        "dengan persen akad-nya, lalu potongan dan Nett Bagi Hasil. "
-        "Nilai potongan diambil dari berkas Excel yang sudah Anda isi — unduh Excel di "
-        "atas, isi kolom potongan di sheet tiap cabang, lalu upload kembali di sini."
-    )
-
-    up_pot = st.file_uploader(
-        "Excel potongan yang sudah diisi (opsional)", type=['xlsx'],
-        key='up_potongan',
-        help="Berkas hasil tombol Unduh Excel di atas, setelah kolom potongan diisi. "
-             "Kalau dikosongkan, semua potongan dianggap nol.")
-
-    bentuk = st.radio(
-        "Pengelompokan berkas di dalam ZIP", ['Folder per cabang', 'ZIP per cabang'],
-        horizontal=True, key='bentuk_zip',
-        help="Folder per cabang: satu ZIP berisi folder KLENDER/, CEGER/, dst. "
-             "ZIP per cabang: satu ZIP berisi KLENDER.zip, CEGER.zip, dst.")
-
-    catatan_slip = st.text_area(
-        "Catatan yang dicetak di setiap slip", value="", key='catatan_slip',
-        height=70, placeholder="mis. Slip ini sah tanpa tanda tangan basah.")
-
-    potongan = {}
-    if up_pot is not None:
-        try:
-            potongan, n_pot = baca_potongan(up_pot.getvalue())
-            st.success(f"Potongan terbaca untuk {n_pot:,} baris teknisi.")
-        except Exception as e:                                   # noqa: BLE001
-            st.error(f"Berkas potongan tidak terbaca: {e}")
-    else:
-        st.info("Belum ada berkas potongan — semua potongan dicetak Rp 0.")
-
-    if st.button("🧾 Siapkan slip gaji PDF", key='siap_pdf', use_container_width=True):
-        with st.spinner("Menyusun slip per cabang..."):
-            try:
-                isi, ringkas = buat_zip_slip(
-                    jasa_tampil, potongan, catatan_slip, periode_txt,
-                    zip_per_cabang=(bentuk == 'ZIP per cabang'))
-                st.session_state['zip_slip'] = isi
-                st.session_state['zip_tag'] = tag_file
-                st.session_state['ringkas_slip'] = ringkas
-            except ModuleNotFoundError:
-                st.error("Paket **reportlab** belum terpasang. Tambahkan `reportlab` "
-                         "ke requirements.txt lalu deploy ulang.")
-
-    if st.session_state.get('zip_slip') is not None:
-        st.download_button(
-            "⬇️ Unduh slip gaji (.zip)",
-            data=st.session_state['zip_slip'],
-            file_name=f"slip_bagi_hasil_{st.session_state.get('zip_tag', tag_file)}.zip",
-            mime="application/zip", use_container_width=True, key='unduh_zip')
-        rs = st.session_state.get('ringkas_slip')
-        if rs is not None and len(rs):
-            st.caption(f"{int(rs['Slip'].sum()):,} slip di {len(rs)} cabang.")
-            with st.expander("Rincian jumlah slip per cabang"):
-                st.dataframe(rs, hide_index=True, use_container_width=True)
-
-
-
-# ---------------------------------------------------------------------------
-# Grafik & rekap pendukung
-# ---------------------------------------------------------------------------
-g1, g2 = st.columns([1.15, 1])
-with g1:
-    st.markdown("#### 15 Teratas — Aturan vs Pembanding")
-    top = rek[rek['TEKNISI'] != 'TIDAK ADA TEKNISI'].head(15).copy()
-    top['NAMA'] = top['TEKNISI'].str.slice(0, 22) + " — " + top['CABANG'].str.slice(0, 10)
-    top = top.sort_values('Bagi_Hasil')
-    fig = go.Figure()
-    fig.add_bar(y=top['NAMA'], x=top['Bagi_Hasil'], orientation='h',
-                name='Aturan', marker_color='#16a34a')
-    fig.add_bar(y=top['NAMA'], x=top['Flat'], orientation='h',
-                name=f'Flat {tarif_flat:.0f}%', marker_color='#a855f7')
-    fig.update_layout(barmode='group', height=560, margin=dict(l=10, r=10, t=10, b=10),
-                      legend=dict(orientation='h', y=1.04), xaxis_title='Rupiah')
-    st.plotly_chart(fig, use_container_width=True, key='fig_top')
-
-with g2:
-    st.markdown("#### Komposisi Omzet Jasa per Tarif")
-    gtar = jasa.groupby('TARIF_LABEL').agg(
-        Baris=('TOTAL HARGA', 'size'), Omzet=('TOTAL HARGA', 'sum'),
-        Bagi_Hasil=('BAGI_HASIL', 'sum'))
-    gtar['Tarif'] = gtar.index.map(lambda k: peta_tarif.get(k, 0.0) * 100)
-    gtar['Tarif'] = gtar['Tarif'].round(1).astype(str) + '%'
-    gtar = gtar.sort_values('Omzet', ascending=False)
-    st.dataframe(
-        gtar[['Tarif', 'Baris', 'Omzet', 'Bagi_Hasil']]
-        .rename(columns={'Bagi_Hasil': 'Bagi Hasil'})
-        .style.format({'Baris': '{:,.0f}', 'Omzet': 'Rp {:,.0f}',
-                       'Bagi Hasil': 'Rp {:,.0f}'}),
-        use_container_width=True, key='tabel_tarif')
-    figp = px.pie(names=gtar.index, values=gtar['Omzet'], hole=0.55,
-                  color_discrete_sequence=PALETTE)
-    figp.update_layout(height=300, margin=dict(l=5, r=5, t=5, b=5),
-                       legend=dict(font=dict(size=9)))
-    st.plotly_chart(figp, use_container_width=True, key='fig_tarif')
-
-st.markdown("#### Rekap per Cabang")
-gcb = jasa.groupby('CABANG', as_index=False).agg(
-    Teknisi=('TEKNISI', 'nunique'), Baris=('TOTAL HARGA', 'size'),
-    Omzet_Jasa=('TOTAL HARGA', 'sum'), Bagi_Hasil=('BAGI_HASIL', 'sum'),
-    Flat=('FLAT', 'sum'))
-gcb['Selisih'] = gcb['Bagi_Hasil'] - gcb['Flat']
-gcb['Efektif %'] = (gcb['Bagi_Hasil'] / gcb['Omzet_Jasa'] * 100).round(1)
-gcb = gcb.sort_values('Bagi_Hasil', ascending=False).rename(columns={
-    'CABANG': 'Cabang', 'Omzet_Jasa': 'Omzet Jasa',
-    'Bagi_Hasil': 'Bagi Hasil (Aturan)', 'Flat': lbl_flat})
-st.dataframe(
-    gcb.style.format({'Teknisi': '{:,.0f}', 'Baris': '{:,.0f}',
-                      'Omzet Jasa': 'Rp {:,.0f}', 'Bagi Hasil (Aturan)': 'Rp {:,.0f}',
-                      lbl_flat: 'Rp {:,.0f}', 'Selisih': 'Rp {:,.0f}'}),
-    use_container_width=True, height=380, hide_index=True, key='tabel_cabang')
-st.download_button(
-    "⬇️ Unduh rekap per Cabang (CSV)",
-    data=gcb.to_csv(index=False).encode('utf-8-sig'),
-    file_name=f"bagi_hasil_cabang_{tag_file}.csv", mime="text/csv", key='unduh_cab')
-
-st.markdown("#### Detail Transaksi Jasa")
-q = st.text_input("Cari teknisi / cabang / barang / faktur", key='cari_detail')
-kol = ['TGL FAKTUR', 'NO FAKTUR', 'CABANG', 'TEKNISI', 'NAMA BARANG',
-       'TARIF_LABEL', 'TARIF', 'TOTAL HARGA', 'BAGI_HASIL', 'FLAT']
-kol = [c for c in kol if c in jasa.columns]
-det = jasa[kol].rename(columns={
-    'CABANG': 'Cabang', 'TEKNISI': 'Nama Teknisi', 'TARIF_LABEL': 'Kategori Tarif',
-    'TARIF': 'Tarif', 'BAGI_HASIL': 'Bagi Hasil', 'FLAT': lbl_flat})
-if q:
-    m = det.apply(lambda r: q.upper() in ' '.join(str(v) for v in r.values).upper(), axis=1)
-    det = det[m]
-st.caption(f"{len(det):,} baris (ditampilkan maksimal 1.000).")
-st.dataframe(det.head(1000), use_container_width=True, height=360,
-             hide_index=True, key='tabel_detail')
-
-with st.expander("ℹ️ Cara perhitungan & catatan"):
-    st.write(
-        "**Tarif bagi hasil** ditentukan dari kata kunci pada kolom NAMA BARANG, "
-        "mengikuti isian pada panel Pengaturan Tarif di atas:\n"
-        f"- mengandung **Interface** → {tarif_input['Interface']:.0f}%\n"
-        f"- mengandung **Normal** → {tarif_input['Normal']:.0f}%\n"
-        f"- mengandung **Mati Total** → {tarif_input['Mati Total']:.0f}%\n"
-        f"- mengandung **Promo** → {tarif_input['Promo']:.0f}%\n"
-        f"- tanpa kata kunci mana pun → **{tarif_lain:.0f}%** (mencakup item berpola "
-        "`JASA ...` seperti JASA REPAIR, JASA BATERAI, JASA LCD 50%)\n\n"
-        "Bila satu nama mengandung dua kata kunci sekaligus (mis. "
-        f"`JS PROMO LCD 250K - NORMAL`), dipakai **{prioritas} "
-        f"{tarif_input[prioritas]:.0f}%** sesuai pilihan prioritas.\n\n"
-        "**Periode penggajian** memakai cutoff tanggal 24 s/d 23: gaji bulan M dihitung "
-        "dari 24 bulan (M−1) sampai 23 bulan M. Contoh gaji Juli 2026 = 24 Juni 2026 "
-        "s/d 23 Juli 2026. Tanggal acuan: **TGL FAKTUR**.\n\n"
-        f"**Pembanding Flat {tarif_flat:.0f}%** = seluruh omzet jasa × {tarif_flat:.0f}%, "
-        "tanpa membedakan jenis pekerjaan.\n\n"
-        "**Tarif khusus per teknisi** (tabel di panel Pengaturan Tarif) menimpa tarif "
-        "umum hanya untuk kualifikasi yang diisi; kualifikasi yang dikosongkan tetap "
-        "ikut tarif umum. Pencocokan nama memakai awalan, sehingga nama di data yang "
-        "berakhiran nama cabang tetap kena. Tarif pembanding flat tidak ikut "
-        "ditimpa.\n\n"
-        "Nama teknisi diambil dari kolom **NAMA TEKNISI (FINAL)**; bila kosong dipakai "
-        "kolom NAMA TEKNISI. Baris yang keduanya kosong masuk kelompok "
-        "*TIDAK ADA TEKNISI* — tetap ditampilkan agar terlihat, dan bisa disembunyikan "
-        "lewat centang di atas.\n\n"
-        "Perhitungan memakai **omzet jasa (TOTAL HARGA)**, belum dikurangi biaya apa pun. "
-        "Hanya baris berkategori **JASA** yang dihitung, dan baris yang cocok dengan "
-        "daftar pengecualian (bawaan: **oper gadget**) dikeluarkan lebih dulu.\n\n"
-        "Untuk cabang yang dipilih pada **acuan KERUSAKAN UTAMA**, kualifikasi tidak "
-        "dibaca dari nama barang melainkan dari kolom KERUSAKAN UTAMA bersama KATEGORI "
-        "PENJUALAN: LCD pada service HP, baterai, SSD, RAM, dan software pada service "
-        "laptop masuk **Interface**; LCD pada service laptop, flexibel, mic, wifi card, "
-        "software pada service HP, dan repair masuk **Normal**; kerusakan `mati total` "
-        "masuk **Mati Total**; kerusakan lain di luar daftar ikut **Normal**."
-    )
