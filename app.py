@@ -6,6 +6,7 @@ Jalankan:
 """
 import io
 import re
+from copy import copy
 from datetime import date
 from pathlib import Path
 
@@ -18,6 +19,7 @@ import streamlit as st
 st.set_page_config(page_title="Bagi Hasil Teknisi", layout="wide", page_icon="🧰")
 
 TEMPLATE_PATH = Path(__file__).parent / "template.xlsx"
+FINAL_PATH = Path(__file__).parent / "final.xlsx"
 
 BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli',
                'Agustus', 'September', 'Oktober', 'November', 'Desember']
@@ -770,6 +772,51 @@ def _rumus_gaji(df, r):
     }
 
 
+def salin_sheet(ws_src, wb_dst, title_dst=None):
+    """Menyalin sheet dari source workbook ke destination workbook beserta gaya selnya."""
+    if title_dst is None:
+        title_dst = ws_src.title
+    ws_dst = wb_dst.create_sheet(title=title_dst)
+
+    for row in ws_src.iter_rows():
+        for cell in row:
+            new_cell = ws_dst.cell(row=cell.row, column=cell.column, value=cell.value)
+            if cell.has_style:
+                try:
+                    new_cell.font = copy(cell.font)
+                except Exception:
+                    pass
+                try:
+                    new_cell.border = copy(cell.border)
+                except Exception:
+                    pass
+                try:
+                    new_cell.fill = copy(cell.fill)
+                except Exception:
+                    pass
+                if cell.number_format:
+                    new_cell.number_format = cell.number_format
+                try:
+                    new_cell.protection = copy(cell.protection)
+                except Exception:
+                    pass
+                try:
+                    new_cell.alignment = copy(cell.alignment)
+                except Exception:
+                    pass
+
+    for col_letter, col_dim in ws_src.column_dimensions.items():
+        ws_dst.column_dimensions[col_letter].width = col_dim.width
+
+    for row_idx, row_dim in ws_src.row_dimensions.items():
+        ws_dst.row_dimensions[row_idx].height = row_dim.height
+
+    for merged_cell in ws_src.merged_cells.ranges:
+        ws_dst.merge_cells(str(merged_cell))
+
+    return ws_dst
+
+
 def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
     ws = wb.create_sheet(title=nama_sheet)
 
@@ -902,7 +949,7 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
 
 
 def buat_excel(df_sumber, raw_bytes=None):
-    """Workbook: Sheet 1 (Rincian Faktur Penjualan), Sheet 2 (Pivot), Sheet 3 (RAW)."""
+    """Workbook: Sheet 1 (Rincian Faktur Penjualan), Sheet 2 (Pivot), Sheet 3 (RAW), Sheet 4 (final)."""
     buf = io.BytesIO()
 
     d = df_sumber.copy()
@@ -956,6 +1003,22 @@ def buat_excel(df_sumber, raw_bytes=None):
 
         _tulis_sheet(wb, dc, s_name, f'Bagi Hasil Teknisi — Cabang {cab}', kolom_gaji=True)
 
+    # Tambahkan Sheet ke-4 dari final.xlsx (hanya mengambil sheet 'final')
+    if FINAL_PATH.exists():
+        try:
+            wb_final = openpyxl.load_workbook(FINAL_PATH)
+            sheet_target = None
+            for s in wb_final.sheetnames:
+                if s.strip().lower() == 'final':
+                    sheet_target = wb_final[s]
+                    break
+            if sheet_target is None:
+                sheet_target = wb_final.active
+            
+            salin_sheet(sheet_target, wb, title_dst="final")
+        except Exception as e:
+            st.warning(f"Gagal menyalin sheet 'final' dari final.xlsx: {e}")
+
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue()
@@ -985,10 +1048,10 @@ else:
 nama_file_download = f"Bagi hasil teknisi {label_tgl_file} {nama_cabang_file}.xlsx"
 
 with st.container():
-    st.markdown("##### 📊 Unduh Excel (Sesuai Template + Sheet RAW)")
+    st.markdown("##### 📊 Unduh Excel (Sesuai Template + Sheet RAW + Sheet Final)")
     st.caption(
         "Mengunduh file Excel yang berisi **Sheet 1 (Rincian Faktur Penjualan)**, "
-        "**Sheet 2 (Pivot)**, dan **Sheet 3 (RAW)**."
+        "**Sheet 2 (Pivot)**, **Sheet 3 (RAW)**, dan **Sheet 4 (final)**."
     )
     if st.button("🧾 Siapkan berkas Excel", key='siap_xlsx', use_container_width=True):
         with st.spinner("Menyusun workbook..."):
