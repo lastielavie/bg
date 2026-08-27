@@ -1,13 +1,7 @@
 """
-Dashboard Bagi Hasil Teknisi (aplikasi berdiri sendiri)
-=======================================================
-Menghitung omzet jasa per teknisi beserta bagi hasilnya, dengan:
-  - tarif per kata kunci pada NAMA BARANG yang bisa diubah manual
-  - periode penggajian memakai cutoff tanggal 24 s/d 23
-  - perbandingan terhadap skema flat (seluruh omzet jasa x satu tarif)
-
+Dashboard Bagi Hasil Teknisi
+============================
 Jalankan:
-    pip install -r requirements.txt
     streamlit run app.py
 """
 import io
@@ -31,7 +25,6 @@ BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli
 PALETTE = ['#1f3864', '#2e9bd6', '#16a34a', '#e0921f', '#c9392f',
            '#7c3aed', '#0f8a82', '#a855f7', '#3f8ac9', '#d1478d']
 
-# --- aturan bagi hasil (nilai awal; bisa diubah dari dashboard) --------------
 KATA_KUNCI_TARIF = ['INTERFACE', 'NORMAL', 'MATI TOTAL', 'PROMO']
 KATEGORI_TARIF = ['Interface', 'Normal', 'Mati Total', 'Promo', 'Lainnya']
 TARIF_AWAL = {'Interface': 20.0, 'Normal': 30.0, 'Mati Total': 32.0, 'Promo': 60.0}
@@ -39,30 +32,26 @@ TARIF_DEFAULT_AWAL = 30.0
 TARIF_PEMBANDING_AWAL = 30.0
 LABEL_LAINNYA = 'Lainnya'
 
-# Jasa yang tidak ikut dihitung bagi hasil (dicocokkan pada NAMA BARANG).
 POLA_JASA_DIKECUALIKAN = ['OPER GADGET']
 
-# Sebagian cabang datanya belum memakai penamaan barang berkata kunci, sehingga
-# kualifikasi dibaca dari kolom KERUSAKAN UTAMA + KATEGORI PENJUALAN.
 CABANG_ACUAN_KERUSAKAN = ['CONDET']
 KERUSAKAN_INTERFACE = ['BATERAI', 'SSD', 'RAM']
 KERUSAKAN_NORMAL = ['FLEXIBEL', 'FLEXIBLE', 'FLEKSIBEL', 'MIC', 'WIFI CARD', 'REPAIR']
 
 
 def label_dari_kerusakan(kerusakan, kategori_jual):
-    """Kualifikasi dari KERUSAKAN UTAMA; LCD & SOFTWARE bergantung kategori jual."""
     ku = str(kerusakan or '').upper()
     kp = str(kategori_jual or '').upper()
     laptop = 'LAPTOP' in kp
     if 'MATI TOTAL' in ku:
         return 'Mati Total'
-    if 'LCD' in ku:                       # HP -> Interface, laptop -> Normal
+    if 'LCD' in ku:
         return 'Normal' if laptop else ('Interface' if 'HP' in kp else 'Normal')
-    if 'SOFTWARE' in ku:                  # laptop -> Interface, HP -> Normal
+    if 'SOFTWARE' in ku:
         return 'Interface' if laptop else 'Normal'
     if any(k in ku for k in KERUSAKAN_INTERFACE):
         return 'Interface'
-    return 'Normal'                       # termasuk daftar KERUSAKAN_NORMAL
+    return 'Normal'
 
 
 NAMA_TARIF_TETAP_20 = [
@@ -93,7 +82,6 @@ def _nama_rapi(s):
 
 
 def peta_tarif_khusus(tabel):
-    """DataFrame editor -> {nama_rapi: {label_kualifikasi: pecahan tarif}}."""
     hasil = {}
     if tabel is None or len(tabel) == 0:
         return hasil
@@ -112,10 +100,6 @@ def peta_tarif_khusus(tabel):
 
 
 def cocokkan_teknisi(nama_teknisi, kunci_khusus):
-    """Nama di data sering berakhiran nama cabang ('IRVAN SYAHRONI CINERE').
-
-    Dicocokkan sama persis atau lewat awalan; kunci terpanjang menang.
-    """
     peta = {}
     kunci = sorted(kunci_khusus, key=len, reverse=True)
     for t in nama_teknisi:
@@ -139,9 +123,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Utilitas
-# ---------------------------------------------------------------------------
 def rp(v, singkat=True):
     try:
         v = float(v)
@@ -191,7 +172,6 @@ def pilih_label_tarif(kw_str, urutan):
 
 
 def periode_gaji(bulan_gaji: int, tahun_gaji: int):
-    """Gaji bulan M dihitung dari 24 bulan (M-1) s/d 23 bulan M."""
     m_akhir, th_akhir = bulan_gaji, tahun_gaji
     m_awal, th_awal = m_akhir - 1, th_akhir
     if m_awal < 1:
@@ -315,6 +295,9 @@ def _potongan_berkas(nama_berkas: str, isi: bytes):
         if xls is None:
             xls = pd.ExcelFile(io.BytesIO(isi), engine='openpyxl')
         for sheet in xls.sheet_names:
+            # Abaikan sheet non-transaksi (Pivot/Sheet N) agar tidak memicu error
+            if str(sheet).strip().lower() in ['pivot', 'pivottable', 'sheet n', 'pivot table']:
+                continue
             d = xls.parse(sheet)
             if not d.empty:
                 yield d, sheet
@@ -331,14 +314,16 @@ def baca_mentah(items: tuple, kanonik: tuple, alias_items: tuple):
             gagal.append(f"{nama_berkas}: {e}")
             continue
         if not potongan:
-            gagal.append(f"{nama_berkas}: tidak ada baris data")
+            gagal.append(f"{nama_berkas}: tidak ada baris data transaksi")
             continue
         for d, bagian in potongan:
             kurang = [c for c in SALES_REQUIRED if c not in d.columns]
             if kurang:
-                gagal.append(f"{nama_berkas}"
-                             + (f" [{bagian}]" if bagian else "")
-                             + ": kolom tidak ditemukan — " + ", ".join(kurang))
+                # Hanya masukkan ke daftar gagal jika tidak ada bagian/sheet lain
+                if len(potongan) == 1:
+                    gagal.append(f"{nama_berkas}"
+                                 + (f" [{bagian}]" if bagian else "")
+                                 + ": kolom tidak ditemukan — " + ", ".join(kurang))
                 continue
             d = d[[c for c in KOLOM_DIPAKAI if c in d.columns]].copy()
 
@@ -399,7 +384,6 @@ def bersihkan(df: pd.DataFrame) -> pd.DataFrame:
                               'NaN': LABEL_TANPA_CABANG, 'None': LABEL_TANPA_CABANG})
                     .fillna(LABEL_TANPA_CABANG))
 
-    # Kunci logika omset & teknisi ke NAMA TEKNISI (FINAL)
     fin = _nama_teknisi_bersih(df['NAMA TEKNISI (FINAL)']) if 'NAMA TEKNISI (FINAL)' in df.columns \
         else pd.Series('', index=df.index)
     asli = _nama_teknisi_bersih(df['NAMA TEKNISI']) if 'NAMA TEKNISI' in df.columns \
@@ -419,14 +403,11 @@ def bersihkan(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ---------------------------------------------------------------------------
-# Sidebar: sumber data (terbatas 1 file saja)
-# ---------------------------------------------------------------------------
 st.sidebar.title("📁 Sumber Data")
 up = st.sidebar.file_uploader(
     "Upload data penjualan",
     type=['xlsx', 'xlsm', 'gz', 'csv'],
-    accept_multiple_files=False,  # Batasi hanya 1 file saja
+    accept_multiple_files=False,
     key='uploader_cabang',
     help="Upload 1 berkas penjualan gabungan.")
 
@@ -514,12 +495,7 @@ if not catatan_berkas.empty:
 st.title("🧰 Bagi Hasil Teknisi")
 
 if jasa_all.empty:
-    st.info(
-        "Data belum tersedia. Silakan upload file penjualan lewat panel kiri.\n\n"
-        "Format yang dibutuhkan: data faktur penjualan dengan kolom TGL FAKTUR, NO FAKTUR, "
-        "KATEGORI BARANG, NAMA BARANG, NAMA TEKNISI (FINAL), QTY, TOTAL HARGA, dan CABANG "
-        "(atau satu sheet per cabang bila berupa .xlsx)."
-    )
+    st.info("Data belum tersedia. Silakan upload file penjualan lewat panel kiri.")
     st.stop()
 
 st.caption(
@@ -528,11 +504,7 @@ st.caption(
     f"data {jasa_all['TGL'].min():%d %b %Y} – {jasa_all['TGL'].max():%d %b %Y}"
 )
 
-# ---------------------------------------------------------------------------
-# Pengaturan tarif
-# ---------------------------------------------------------------------------
 with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", expanded=False):
-    st.caption("Ubah angka sesuai kebijakan; seluruh perhitungan langsung menyesuaikan.")
     c1, c2, c3, c4 = st.columns(4)
     tarif_input = {}
     with c1:
@@ -561,7 +533,6 @@ with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", e
             ['Normal', 'Promo', 'Mati Total', 'Interface'], index=0, key='t_prio')
 
     st.divider()
-    st.markdown("**Pengecualian & acuan kualifikasi**")
     k1, k2 = st.columns(2)
     with k1:
         teks_kecuali = st.text_area(
@@ -576,7 +547,6 @@ with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", e
             key='cab_kerusakan')
 
     st.divider()
-    st.markdown("**Tarif khusus per teknisi**")
     if 'tabel_khusus' not in st.session_state:
         st.session_state['tabel_khusus'] = tarif_khusus_awal()
     tabel_khusus = st.data_editor(
@@ -607,14 +577,11 @@ peta_tarif[LABEL_LAINNYA] = tarif_lain / 100.0
 jasa_all = jasa_all.copy()
 
 pola_kecuali = [p.strip().upper() for p in teks_kecuali.splitlines() if p.strip()]
-n_kecuali, omzet_kecuali = 0, 0.0
 if pola_kecuali:
     b = jasa_all['BARANG'].astype(str).str.upper()
     buang = pd.Series(False, index=jasa_all.index)
     for p in pola_kecuali:
         buang |= b.str.contains(re.escape(p), regex=True, na=False)
-    n_kecuali = int(buang.sum())
-    omzet_kecuali = float(jasa_all.loc[buang, 'TOTAL HARGA'].sum())
     jasa_all = jasa_all[~buang].copy()
 
 jasa_all['TARIF_LABEL'] = jasa_all['KW_MATCH'].map(lambda s: pilih_label_tarif(s, urutan))
@@ -629,19 +596,14 @@ jasa_all['TARIF'] = jasa_all['TARIF_LABEL'].map(peta_tarif).fillna(0.0)
 khusus = peta_tarif_khusus(tabel_khusus)
 peta_nama = cocokkan_teknisi(jasa_all['TEKNISI'].unique(), khusus.keys())
 jasa_all['TARIF_KHUSUS'] = jasa_all['TEKNISI'].map(peta_nama)
-n_khusus = 0
 for kunci, tar in khusus.items():
     for lbl, frac in tar.items():
         m = (jasa_all['TARIF_KHUSUS'] == kunci) & (jasa_all['TARIF_LABEL'] == lbl)
         jasa_all.loc[m, 'TARIF'] = frac
-        n_khusus += int(m.sum())
 
 jasa_all['BAGI_HASIL'] = jasa_all['TOTAL HARGA'] * jasa_all['TARIF']
 jasa_all['FLAT'] = jasa_all['TOTAL HARGA'] * (tarif_flat / 100.0)
 
-# ---------------------------------------------------------------------------
-# Filter periode & cabang
-# ---------------------------------------------------------------------------
 fa, fb, fc = st.columns([2.2, 1.4, 1])
 periode_list = daftar_periode_gaji(jasa_all['TGL'].min(), jasa_all['TGL'].max())
 opsi = ['Semua Periode'] + periode_list
@@ -678,9 +640,6 @@ if jasa.empty:
     st.warning("Tidak ada transaksi jasa pada periode/cabang tersebut.")
     st.stop()
 
-# ---------------------------------------------------------------------------
-# KPI
-# ---------------------------------------------------------------------------
 omzet = jasa['TOTAL HARGA'].sum()
 bh = jasa['BAGI_HASIL'].sum()
 fl = jasa['FLAT'].sum()
@@ -713,9 +672,6 @@ st.write("")
 
 lbl_flat = f'Pembanding {tarif_flat:.0f}%'
 
-# ---------------------------------------------------------------------------
-# Rekap utama: per Teknisi x Cabang
-# ---------------------------------------------------------------------------
 st.markdown("### Rekap Bagi Hasil per Teknisi & Cabang")
 rek = (jasa_tampil.groupby(['TEKNISI', 'CABANG'], as_index=False)
        .agg(Baris=('TOTAL HARGA', 'size'),
@@ -744,9 +700,6 @@ st.dataframe(
         'Selisih': 'Rp {:,.0f}'}),
     use_container_width=True, height=460, hide_index=True, key='tabel_rekap')
 
-# ---------------------------------------------------------------------------
-# Unduhan Excel (Sheet 1: Rincian, Sheet 2: Pivot, Sheet 3..N: Cabang)
-# ---------------------------------------------------------------------------
 KATEGORI_ORDER = ['Interface', 'Normal', 'Mati Total', 'Promo', LABEL_LAINNYA]
 
 KOLOM_POTONGAN = ['Potongan Refund', 'Potongan AR', 'Potongan Kasbon', 'Keterlambatan',
@@ -879,7 +832,6 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
             for j in range(1, n_kol + 1):
                 ws.cell(row=r, column=j).fill = PatternFill('solid', fgColor='F4F7FB')
 
-        # 1. Rumus Bagi Hasil per Kategori
         tek_nama = df.iloc[i].get('Nama Teknisi', '')
         kunci_tek = peta_nama.get(tek_nama)
         for k in KATEGORI_ORDER:
@@ -892,7 +844,6 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
                 ws.cell(row=r, column=df.columns.get_loc(bh_k) + 1,
                         value=f"={kol_letter(omzet_k)}{r}*{tar_frac}")
 
-        # 2. Rumus Omzet Total & Bagi Hasil Total
         if 'Omzet Jasa (Total)' in df.columns and 'Omzet Interface' in df.columns:
             ws.cell(row=r, column=df.columns.get_loc('Omzet Jasa (Total)') + 1,
                     value=f"=SUM({kol_letter('Omzet Interface')}{r}:{kol_letter('Omzet Lainnya')}{r})")
@@ -901,7 +852,6 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
             ws.cell(row=r, column=df.columns.get_loc('Bagi Hasil (Aturan)') + 1,
                     value=f"=SUM({kol_letter('Bagi Hasil Interface')}{r}:{kol_letter('Bagi Hasil Lainnya')}{r})")
 
-        # 3. Rumus Pembanding Flat, Selisih, dan Efektif %
         if lbl_flat in df.columns and 'Omzet Jasa (Total)' in df.columns:
             ws.cell(row=r, column=df.columns.get_loc(lbl_flat) + 1,
                     value=f"={kol_letter('Omzet Jasa (Total)')}{r}*{tarif_flat/100}")
@@ -914,7 +864,6 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
             ws.cell(row=r, column=df.columns.get_loc('Efektif %') + 1,
                     value=f"=IF({kol_letter('Omzet Jasa (Total)')}{r}=0,0,{kol_letter('Bagi Hasil (Aturan)')}{r}/{kol_letter('Omzet Jasa (Total)')}{r}*100)")
 
-        # Format cell & border
         for j in idx_rp:
             ws.cell(row=r, column=j).number_format = '#,##0'
         if idx_baris:
@@ -924,7 +873,6 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
         for j in range(1, n_kol + 1):
             ws.cell(row=r, column=j).border = Border(bottom=thin)
 
-        # 4. Inputan Manual Potongan & Total Potongan (Kuning Muda FFF8E1)
         if kolom_gaji:
             for kol in KOLOM_POTONGAN + KOLOM_CADANGAN + ['Total Potongan']:
                 ws.cell(row=r, column=df.columns.get_loc(kol) + 1).fill = \
@@ -933,7 +881,6 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
                 sel = ws.cell(row=r, column=df.columns.get_loc(kol) + 1, value=rumus)
                 sel.number_format = '#,##0'
 
-    # 5. Baris TOTAL Paling Bawah
     if n_baris:
         rt = 5 + n_baris
         ws.cell(row=rt, column=1, value='TOTAL')
@@ -974,7 +921,7 @@ def buat_excel(df_sumber, raw_bytes=None):
     # 1. Buka template.xlsx bila ada
     if TEMPLATE_PATH.exists():
         wb = openpyxl.load_workbook(TEMPLATE_PATH)
-        # Isi Sheet 1 dengan data yang diupload
+        # Update Sheet 1 'Rincian Faktur Penjualan'
         if raw_bytes and 'Rincian Faktur Penjualan' in wb.sheetnames:
             ws_rincian = wb['Rincian Faktur Penjualan']
             wb_up = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True)
@@ -984,8 +931,16 @@ def buat_excel(df_sumber, raw_bytes=None):
                 ws_rincian.delete_rows(2, ws_rincian.max_row)
 
             for r in range(2, ws_up.max_row + 1):
-                row_vals = [ws_up.cell(r, c).value for c in range(1, ws_up.max_column + 1)]
+                row_vals = [ws_up.cell(r, c).value for c in range(1, 47)]
                 if any(v is not None for v in row_vals):
+                    # Sisipkan huruf 'i' pada kolom penyekat ganjil (kolom 3, 5, ..., 45)
+                    for col_idx in range(3, 46, 2):
+                        row_vals[col_idx - 1] = 'i'
+                    
+                    # Tambahkan rumus Kata Kunci pada kolom 47
+                    formula_katakunci = f'=_xlfn.IFS(ISNUMBER(SEARCH("Interface", AJ{r})), "Omset Interface", ISNUMBER(SEARCH("Normal", AJ{r})), "Omset Normal", ISNUMBER(SEARCH("Mati Total", AJ{r})), "Omset Mati Total", ISNUMBER(SEARCH("Promo", AJ{r})), "Omset Promo", TRUE, "Omset lainnya")'
+                    row_vals.append(formula_katakunci)
+
                     ws_rincian.append(row_vals)
     else:
         wb = openpyxl.Workbook()
@@ -1012,9 +967,6 @@ def buat_excel(df_sumber, raw_bytes=None):
     return buf.getvalue()
 
 
-# ---------------------------------------------------------------------------
-# UI Tombol Download Excel
-# ---------------------------------------------------------------------------
 with st.container():
     st.markdown("##### 📊 Unduh Excel (Sesuai Template + Sheet per Cabang)")
     st.caption(
