@@ -853,6 +853,22 @@ def salin_sheet(ws_src, wb_dst, title_dst=None):
     for merged_cell in ws_src.merged_cells.ranges:
         ws_dst.merge_cells(str(merged_cell))
 
+    # 5. Salin Pengaturan Halaman & Margin Cetak
+    if hasattr(ws_src, 'page_setup') and ws_src.page_setup:
+        ws_dst.page_setup.orientation = ws_src.page_setup.orientation
+        ws_dst.page_setup.paperSize = ws_src.page_setup.paperSize
+        ws_dst.page_setup.fitToWidth = 1
+        ws_dst.page_setup.fitToHeight = 1
+        ws_dst.sheet_properties.pageSetUpPr.fitToPage = True
+
+    if hasattr(ws_src, 'page_margins') and ws_src.page_margins:
+        ws_dst.page_margins.left = ws_src.page_margins.left
+        ws_dst.page_margins.right = ws_src.page_margins.right
+        ws_dst.page_margins.top = ws_src.page_margins.top
+        ws_dst.page_margins.bottom = ws_src.page_margins.bottom
+        ws_dst.page_margins.header = ws_src.page_margins.header
+        ws_dst.page_margins.footer = ws_src.page_margins.footer
+
     # Khusus sheet 'FINAL' / 'final': atur fixed lebar kolom P s/d Y = 42.57
     if str(title_dst).strip().lower() == 'final':
         for col_letter in ['P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y']:
