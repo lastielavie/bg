@@ -876,7 +876,6 @@ def salin_sheet(ws_src, wb_dst, title_dst=None):
 
     return ws_dst
 
-
 def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
     ws = wb.create_sheet(title=nama_sheet)
 
@@ -1174,9 +1173,16 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
         except Exception as e:
             st.warning(f"Gagal menyalin/menyesuaikan sheet dari master file: {e}")
 
-    # 6. Format / Beri Warna pada Sheet 'Pivot'
+    # Format / Beri Warna pada Sheet 'Pivot'
     if 'Pivot' in wb.sheetnames:
         ws_pvt = wb['Pivot']
+        if hasattr(ws_pvt, '_pivots') and ws_pvt._pivots:
+            for pvt in ws_pvt._pivots:
+                if pvt.pivotTableStyleInfo:
+                    pvt.pivotTableStyleInfo.name = 'PivotStyleMedium9'
+                    pvt.pivotTableStyleInfo.showRowHeaders = True
+                    pvt.pivotTableStyleInfo.showColHeaders = True
+                    pvt.pivotTableStyleInfo.showRowStripes = True
         head_fill_biru = PatternFill('solid', fgColor='1F3864')
         head_font_putih = Font(bold=True, color='FFFFFF', size=10)
         total_fill_biru = PatternFill('solid', fgColor='DCE6F1')
