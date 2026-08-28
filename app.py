@@ -41,6 +41,22 @@ KERUSAKAN_INTERFACE = ['BATERAI', 'SSD', 'RAM']
 KERUSAKAN_NORMAL = ['FLEXIBEL', 'FLEXIBLE', 'FLEKSIBEL', 'MIC', 'WIFI CARD', 'REPAIR']
 
 
+def norm_formula(val):
+    """Menyesuaikan rumus Excel agar kompatibel dengan openpyxl & Excel XML."""
+    if isinstance(val, str) and val.startswith('='):
+        # 1. Pastikan fungsi Excel modern memiliki prefix _xlfn.
+        modern_funcs = ['TEXTJOIN', 'IFS', 'CONCAT', 'XLOOKUP', 'XMATCH', 'SWITCH', 'MAXIFS', 'MINIFS']
+        for fn in modern_funcs:
+            val = re.sub(rf'(?<!_xlfn\.)\b{fn}\b', f'_xlfn.{fn}', val, flags=re.I)
+        
+        # 2. Ganti titik koma (;) menjadi koma (,) di luar string (tanda petik)
+        parts = re.split(r'("[^"]*")', val)
+        for i in range(0, len(parts), 2):
+            parts[i] = parts[i].replace(';', ',')
+        val = "".join(parts)
+    return val
+
+
 def label_dari_kerusakan(kerusakan, kategori_jual):
     ku = str(kerusakan or '').upper()
     kp = str(kategori_jual or '').upper()
@@ -781,7 +797,8 @@ def salin_sheet(ws_src, wb_dst, title_dst=None):
     # 1. Salin data & styling sel
     for row in ws_src.iter_rows():
         for cell in row:
-            new_cell = ws_dst.cell(row=cell.row, column=cell.column, value=cell.value)
+            val = norm_formula(cell.value)
+            new_cell = ws_dst.cell(row=cell.row, column=cell.column, value=val)
             if cell.has_style:
                 try: new_cell.font = copy(cell.font)
                 except Exception: pass
@@ -935,7 +952,7 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
                 ws.cell(row=r, column=df.columns.get_loc(kol) + 1).fill = \
                     PatternFill('solid', fgColor='FFF8E1')
             for kol, rumus in _rumus_gaji(df, r).items():
-                sel = ws.cell(row=r, column=df.columns.get_loc(kol) + 1, value=rumus)
+                sel = ws.cell(row=r, column=df.columns.get_loc(kol) + 1, value=norm_formula(rumus))
                 sel.number_format = '#,##0'
 
     if n_baris:
@@ -989,7 +1006,7 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
                 row_vals = [ws_up.cell(r, c).value for c in range(1, 47)]
                 if any(v is not None for v in row_vals):
                     formula_katakunci = f'=_xlfn.IFS(ISNUMBER(SEARCH("Interface", AJ{r})), "Omset Interface", ISNUMBER(SEARCH("Normal", AJ{r})), "Omset Normal", ISNUMBER(SEARCH("Mati Total", AJ{r})), "Omset Mati Total", ISNUMBER(SEARCH("Promo", AJ{r})), "Omset Promo", TRUE, "Omset lainnya")'
-                    row_vals.append(formula_katakunci)
+                    row_vals.append(norm_formula(formula_katakunci))
 
                     ws_rincian.append(row_vals)
     else:
@@ -1033,7 +1050,7 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
             if sheet_target is None:
                 sheet_target = wb_final.active
 
-            # 1. Salin sheet
+            # 1. Salin sheet (dengan auto-normalize rumus)
             ws_f = salin_sheet(sheet_target, wb, title_dst="final")
 
             # 2. Update Nama Cabang di Baris 2 (Sel B2)
@@ -1080,29 +1097,33 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
                     jumlah_disisip = n_data_raw - n_template_rows
                     ws_f.insert_rows(baris_total, amount=jumlah_disisip)
 
-                    for idx_s in range(n_template_rows, n_data_raw):
-                        r_curr = baris_awal_data + idx_s
-                        r_raw = 5 + idx_s
+                # Update & salin nilai serta rumus untuk semua baris data
+                for idx_s in range(n_data_raw):
+                    r_curr = baris_awal_data + idx_s
+                    r_raw = 5 + idx_s
 
-                        for col_idx in range(1, ws_f.max_column + 1):
-                            ref_cell = ws_f.cell(baris_awal_data, col_idx)
-                            new_cell = ws_f.cell(r_curr, col_idx)
+                    for col_idx in range(1, ws_f.max_column + 1):
+                        ref_cell = ws_f.cell(baris_awal_data, col_idx)
+                        new_cell = ws_f.cell(r_curr, col_idx)
 
-                            if ref_cell.has_style:
-                                new_cell.font = copy(ref_cell.font)
-                                new_cell.border = copy(ref_cell.border)
-                                new_cell.fill = copy(ref_cell.fill)
-                                new_cell.number_format = ref_cell.number_format
-                                new_cell.alignment = copy(ref_cell.alignment)
+                        if ref_cell.has_style:
+                            new_cell.font = copy(ref_cell.font)
+                            new_cell.border = copy(ref_cell.border)
+                            new_cell.fill = copy(ref_cell.fill)
+                            new_cell.number_format = ref_cell.number_format
+                            new_cell.alignment = copy(ref_cell.alignment)
 
-                            if col_idx == col_no:
-                                new_cell.value = idx_s + 1
-                            elif ref_cell.value and isinstance(ref_cell.value, str) and '=RAW!' in ref_cell.value:
-                                new_cell.value = re.sub(r'(=RAW![A-Z]+)\d+', f'\\1{r_raw}', ref_cell.value)
-                            elif ref_cell.value and isinstance(ref_cell.value, str) and ref_cell.value.startswith('='):
-                                new_cell.value = re.sub(r'(?<=G)8|(?<=H)8|(?<=I)8|(?<=M)8|(?<=N)8', str(r_curr), ref_cell.value)
-                            elif ref_cell.value is not None:
-                                new_cell.value = ref_cell.value
+                        if col_idx == col_no:
+                            new_cell.value = idx_s + 1
+                        elif ref_cell.value and isinstance(ref_cell.value, str) and 'RAW!' in ref_cell.value:
+                            val = re.sub(r'(RAW![A-Z]+)\d+', f'\\1{r_raw}', ref_cell.value)
+                            new_cell.value = norm_formula(val)
+                        elif ref_cell.value and isinstance(ref_cell.value, str) and ref_cell.value.startswith('='):
+                            # Update referensi sel dari baris acuan ke baris saat ini (fleksibel untuk kolom A-Z)
+                            val = re.sub(rf'([A-Z]+){baris_awal_data}\b', rf'\g<1>{r_curr}', ref_cell.value)
+                            new_cell.value = norm_formula(val)
+                        elif ref_cell.value is not None:
+                            new_cell.value = ref_cell.value
 
                 # Re-number kolom NO untuk seluruh baris data
                 for idx_n in range(n_data_raw):
@@ -1116,12 +1137,13 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
                 for col_idx in range(1, ws_f.max_column + 1):
                     cell = ws_f.cell(row=baris_total_baru, column=col_idx)
                     if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
-                        cell.value = re.sub(
+                        val = re.sub(
                             r'SUM\(([A-Z]+)\d+:([A-Z]+)\d+\)',
                             rf'SUM(\g<1>{baris_awal_data}:\g<2>{baris_data_akhir})',
                             cell.value,
                             flags=re.I
                         )
+                        cell.value = norm_formula(val)
 
         except Exception as e:
             st.warning(f"Gagal menyalin/menyesuaikan sheet 'final' dari final.xlsx: {e}")
@@ -1131,7 +1153,7 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
     return buf.getvalue()
 
 
-# Menentukan nama file download otomatis: Bagi hasil teknisi <tanggal> <cabang>.xlsx
+# Menentukan nama file download otomatis
 if f_cabang != 'Semua Cabang':
     nama_cabang_file = f_cabang
 else:
