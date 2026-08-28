@@ -876,6 +876,7 @@ def salin_sheet(ws_src, wb_dst, title_dst=None):
 
     return ws_dst
 
+
 def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
     ws = wb.create_sheet(title=nama_sheet)
 
@@ -1123,7 +1124,7 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
                     jumlah_disisip = n_data_raw - n_template_rows
                     ws_f.insert_rows(baris_total, amount=jumlah_disisip)
 
-                # Update & salin nilai serta rumus untuk seluruh baris data
+                # Update & salin nilai serta rumus untuk semua baris data
                 for idx_s in range(n_data_raw):
                     r_curr = baris_awal_data + idx_s
                     r_raw = 5 + idx_s
@@ -1172,48 +1173,6 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
 
         except Exception as e:
             st.warning(f"Gagal menyalin/menyesuaikan sheet dari master file: {e}")
-
-    # Format / Beri Warna pada Sheet 'Pivot'
-    if 'Pivot' in wb.sheetnames:
-        ws_pvt = wb['Pivot']
-        if hasattr(ws_pvt, '_pivots') and ws_pvt._pivots:
-            for pvt in ws_pvt._pivots:
-                if pvt.pivotTableStyleInfo:
-                    pvt.pivotTableStyleInfo.name = 'PivotStyleMedium9'
-                    pvt.pivotTableStyleInfo.showRowHeaders = True
-                    pvt.pivotTableStyleInfo.showColHeaders = True
-                    pvt.pivotTableStyleInfo.showRowStripes = True
-        head_fill_biru = PatternFill('solid', fgColor='1F3864')
-        head_font_putih = Font(bold=True, color='FFFFFF', size=10)
-        total_fill_biru = PatternFill('solid', fgColor='DCE6F1')
-        total_font_biru = Font(bold=True, color='1F3864', size=10)
-        thin_border = Border(
-            left=Side(style='thin', color='D9D9D9'),
-            right=Side(style='thin', color='D9D9D9'),
-            top=Side(style='thin', color='D9D9D9'),
-            bottom=Side(style='thin', color='D9D9D9')
-        )
-
-        max_c = max(ws_pvt.max_column, 6)
-        for r in (3, 4):
-            for c in range(1, max_c + 1):
-                cell = ws_pvt.cell(r, c)
-                cell.fill = head_fill_biru
-                cell.font = head_font_putih
-                cell.alignment = Alignment(horizontal='center' if c > 1 else 'left', vertical='center')
-
-        for r in range(5, max(ws_pvt.max_row + 1, 30)):
-            val_first = str(ws_pvt.cell(r, 1).value or '').strip().upper()
-            is_grand_total = 'GRAND TOTAL' in val_first or 'TOTAL' in val_first
-            for c in range(1, max_c + 1):
-                cell = ws_pvt.cell(r, c)
-                if is_grand_total:
-                    cell.fill = total_fill_biru
-                    cell.font = total_font_biru
-                if c > 1 and cell.value is not None:
-                    cell.number_format = '#,##0'
-                if cell.value is not None or is_grand_total:
-                    cell.border = thin_border
 
     wb.save(buf)
     buf.seek(0)
