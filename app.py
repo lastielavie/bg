@@ -1127,7 +1127,7 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
                         if col_idx == col_no:
                             new_cell.value = idx_s + 1
                         elif ref_cell.value and isinstance(ref_cell.value, str) and 'RAW!' in ref_cell.value:
-                            val = re.sub(r'(RAW![A-Z]+)\d+', f'\\1{r_raw}', ref_cell.value)
+                            val = re.sub(r'(RAW![A-Z]+)\d+', rf'\g<1>{r_raw}', ref_cell.value)
                             new_cell.value = norm_formula(val)
                         elif ref_cell.value and isinstance(ref_cell.value, str) and ref_cell.value.startswith('='):
                             val = re.sub(rf'([A-Z]+){baris_awal_data}\b', rf'\g<1>{r_curr}', ref_cell.value)
