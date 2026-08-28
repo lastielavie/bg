@@ -22,12 +22,12 @@ TEMPLATE_PATH = Path(__file__).parent / "template.xlsx"
 
 # Deteksi file master final (toleran huruf besar / kecil: final.xlsx, FINAL.xlsx)
 FINAL_PATH = None
-for _p in [Path(__file__).parent / "final.xlsx", Path(__file__).parent / "FINAL.xlsx"]:
+for _p in [Path(__file__).parent / "FINAL.xlsx", Path(__file__).parent / "final.xlsx"]:
     if _p.exists():
         FINAL_PATH = _p
         break
 if FINAL_PATH is None:
-    FINAL_PATH = Path(__file__).parent / "final.xlsx"
+    FINAL_PATH = Path(__file__).parent / "FINAL.xlsx"
 
 BULAN_NAMES = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli',
                'Agustus', 'September', 'Oktober', 'November', 'Desember']
@@ -853,7 +853,7 @@ def salin_sheet(ws_src, wb_dst, title_dst=None):
     for merged_cell in ws_src.merged_cells.ranges:
         ws_dst.merge_cells(str(merged_cell))
 
-    # Khusus sheet 'final': atur fixed lebar kolom P s/d Y = 42.57
+    # Khusus sheet 'FINAL' / 'final': atur fixed lebar kolom P s/d Y = 42.57
     if str(title_dst).strip().lower() == 'final':
         for col_letter in ['P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y']:
             ws_dst.column_dimensions[col_letter].width = 42.57
@@ -993,7 +993,7 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
 
 
 def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
-    """Workbook: Sheet 1 (Rincian Faktur Penjualan), Sheet 2 (Pivot), Sheet 3 (RAW), Sheet 4 (final)."""
+    """Workbook: Sheet 1 (Rincian Faktur Penjualan), Sheet 2 (Pivot), Sheet 3 (RAW), Sheet 4 (FINAL/final)."""
     buf = io.BytesIO()
 
     d = df_sumber.copy()
@@ -1049,7 +1049,7 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
 
         _tulis_sheet(wb, dc, s_name, f'Bagi Hasil Teknisi — Cabang {cab}', kolom_gaji=True)
 
-    # Tambahkan Sheet ke-4 dari master final (final.xlsx / FINAL.xlsx)
+    # Tambahkan Sheet ke-4 dari master file (menyesuaikan nama sheet di master file)
     if FINAL_PATH and FINAL_PATH.exists():
         try:
             wb_final = openpyxl.load_workbook(FINAL_PATH)
@@ -1061,8 +1061,8 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
             if sheet_target is None:
                 sheet_target = wb_final.active
 
-            # 1. Salin sheet (dengan auto-normalize rumus)
-            ws_f = salin_sheet(sheet_target, wb, title_dst="final")
+            # 1. Salin sheet (nama sheet mengikuti master file)
+            ws_f = salin_sheet(sheet_target, wb, title_dst=sheet_target.title)
 
             # 2. Update Nama Cabang di Baris 2 (Sel B2)
             val_b2 = str(ws_f.cell(row=2, column=2).value or '')
@@ -1156,7 +1156,7 @@ def buat_excel(df_sumber, raw_bytes=None, nama_cabang_file='Semua Cabang'):
                         cell.value = norm_formula(val)
 
         except Exception as e:
-            st.warning(f"Gagal menyalin/menyesuaikan sheet 'final' dari master file: {e}")
+            st.warning(f"Gagal menyalin/menyesuaikan sheet dari master file: {e}")
 
     wb.save(buf)
     buf.seek(0)
@@ -1187,10 +1187,10 @@ else:
 nama_file_download = f"Bagi hasil teknisi {label_tgl_file} {nama_cabang_file}.xlsx"
 
 with st.container():
-    st.markdown("##### 📊 Unduh Excel (Sesuai Template + Sheet RAW + Sheet Final)")
+    st.markdown("##### 📊 Unduh Excel (Sesuai Template + Sheet RAW + Sheet FINAL)")
     st.caption(
         "Mengunduh file Excel yang berisi **Sheet 1 (Rincian Faktur Penjualan)**, "
-        "**Sheet 2 (Pivot)**, **Sheet 3 (RAW)**, dan **Sheet 4 (final)**."
+        "**Sheet 2 (Pivot)**, **Sheet 3 (RAW)**, dan **Sheet 4 (FINAL)**."
     )
     if st.button("🧾 Siapkan berkas Excel", key='siap_xlsx', use_container_width=True):
         with st.spinner("Menyusun workbook..."):
