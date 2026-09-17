@@ -980,42 +980,20 @@ def _tulis_sheet(wb, df, nama_sheet, judul, kolom_gaji=False):
     def kol_letter(nama_kolom):
         return get_column_letter(df.columns.get_loc(nama_kolom) + 1)
 
-    tgl_str_mt = tgl_mt_baru.strftime("%Y-%m-%d")
-
     for i in range(n_baris):
         r = 5 + i
         for j, kol in enumerate(df.columns, start=1):
             val = df.iloc[i][kol]
             ws.cell(row=r, column=j, value=val if pd.notna(val) else None)
 
-        tek_nama = df.iloc[i].get('Nama Teknisi', '')
-        kunci_tek = peta_nama.get(tek_nama)
-
+        # Mengisi nilai Bagi Hasil tiap kualifikasi dari hasil kalkulasi presisi DataFrame 
+        # (memperhitungkan perubahan tarif berjangka per tanggal faktur).
         for k in KATEGORI_ORDER:
-            omzet_k = f"Omzet {k}"
             bh_k = f"Bagi Hasil {k}"
-            if omzet_k in df.columns and bh_k in df.columns:
-                tar_frac = peta_tarif.get(k, 0.3)
-                if kunci_tek and kunci_tek in khusus and k in khusus[kunci_tek]:
-                    tar_frac = khusus[kunci_tek][k]
-
-                # Jika kualifikasi Mati Total dan tarif berjangka aktif, gunakan rumus SUMIFS
-                if k == 'Mati Total' and pakai_mt_baru and abs(delta_mt) > 1e-12:
-                    tar_lama = tar_frac
-                    tar_baru = tar_frac + delta_mt
-                    
-                    # Rumus SUMIFS ganda berjangka berdasarkan tanggal faktur
-                    rumus_mt = (
-                        f"=(SUMIFS('Rincian Faktur Penjualan'!AR:AR, 'Rincian Faktur Penjualan'!W:W, A{r}, "
-                        f"'Rincian Faktur Penjualan'!AK:AK, \"*MATI TOTAL*\", 'Rincian Faktur Penjualan'!B:B, \"<{tgl_str_mt}\")*{tar_lama}) + "
-                        f"(SUMIFS('Rincian Faktur Penjualan'!AR:AR, 'Rincian Faktur Penjualan'!W:W, A{r}, "
-                        f"'Rincian Faktur Penjualan'!AK:AK, \"*MATI TOTAL*\", 'Rincian Faktur Penjualan'!B:B, \">={tgl_str_mt}\")*{tar_baru})"
-                    )
-                    ws.cell(row=r, column=df.columns.get_loc(bh_k) + 1, value=norm_formula(rumus_mt))
-                else:
-                    # Rumus standar perkalian biasa untuk kualifikasi lain
-                    ws.cell(row=r, column=df.columns.get_loc(bh_k) + 1,
-                            value=f"={kol_letter(omzet_k)}{r}*{tar_frac}")
+            if bh_k in df.columns:
+                val_bh = df.iloc[i][bh_k]
+                ws.cell(row=r, column=df.columns.get_loc(bh_k) + 1,
+                        value=float(val_bh) if pd.notna(val_bh) else 0.0)
 
         if 'Omzet Jasa (Total)' in df.columns and 'Omzet Interface' in df.columns:
             ws.cell(row=r, column=df.columns.get_loc('Omzet Jasa (Total)') + 1,
