@@ -42,6 +42,11 @@ TARIF_DEFAULT_AWAL = 30.0
 TARIF_PEMBANDING_AWAL = 30.0
 LABEL_LAINNYA = 'Lainnya'
 
+# Perubahan tarif Mati Total yang berlaku mulai tanggal tertentu. Diterapkan
+# per TGL FAKTUR sehingga periode gaji yang terbelah terhitung proporsional.
+TGL_MT_BARU_AWAL = date(2026, 9, 1)
+TARIF_MT_BARU_AWAL = 35.0
+
 POLA_JASA_DIKECUALIKAN = ['OPER GADGET']
 
 CABANG_ACUAN_KERUSAKAN = ['CONDET']
@@ -574,6 +579,25 @@ with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", e
             key='cab_kerusakan')
 
     st.divider()
+    st.markdown("**Perubahan tarif Mati Total berjangka**")
+    st.caption(
+        "Mulai tanggal yang dipilih, tarif Mati Total memakai angka baru. "
+        "Penerapannya per **TGL FAKTUR**, jadi satu periode gaji yang terbelah "
+        "tanggal berlakunya terhitung proporsional dengan sendirinya. Selisih "
+        "poinnya juga ditambahkan ke teknisi bertarif khusus.")
+    m1, m2, m3 = st.columns([1, 1.1, 1.6])
+    with m1:
+        pakai_mt_baru = st.checkbox("Aktifkan", value=True, key='mt_aktif')
+    with m2:
+        tgl_mt_baru = st.date_input(
+            "Berlaku sejak", value=TGL_MT_BARU_AWAL, key='mt_tgl',
+            format="DD/MM/YYYY")
+    with m3:
+        tarif_mt_baru = st.number_input(
+            "Mati Total sejak tanggal itu (%)", 0.0, 100.0, TARIF_MT_BARU_AWAL,
+            0.5, key='mt_tarif')
+
+    st.divider()
     if 'tabel_khusus' not in st.session_state:
         st.session_state['tabel_khusus'] = tarif_khusus_awal()
     tabel_khusus = st.data_editor(
@@ -593,6 +617,9 @@ with st.expander("⚙️ Pengaturan Tarif Bagi Hasil — klik untuk mengubah", e
         st.session_state['t_lain'] = TARIF_DEFAULT_AWAL
         st.session_state['t_flat'] = TARIF_PEMBANDING_AWAL
         st.session_state['t_prio'] = 'Normal'
+        st.session_state['mt_aktif'] = True
+        st.session_state['mt_tgl'] = TGL_MT_BARU_AWAL
+        st.session_state['mt_tarif'] = TARIF_MT_BARU_AWAL
         st.session_state['tabel_khusus'] = tarif_khusus_awal()
         st.session_state.pop('ed_khusus', None)
         st.rerun()
@@ -628,8 +655,34 @@ for kunci, tar in khusus.items():
         m = (jasa_all['TARIF_KHUSUS'] == kunci) & (jasa_all['TARIF_LABEL'] == lbl)
         jasa_all.loc[m, 'TARIF'] = frac
 
+# --- perubahan tarif Mati Total sejak tanggal tertentu -----------------------
+delta_mt = 0.0
+n_mt_baru = 0
+if pakai_mt_baru:
+    delta_mt = (tarif_mt_baru - tarif_input['Mati Total']) / 100.0
+    batas_mt = pd.Timestamp(tgl_mt_baru)
+    m_mt = ((jasa_all['TARIF_LABEL'] == 'Mati Total')
+            & (jasa_all['TGL'] >= batas_mt))
+    n_mt_baru = int(m_mt.sum())
+    if n_mt_baru and abs(delta_mt) > 1e-12:
+        jasa_all.loc[m_mt, 'TARIF'] = jasa_all.loc[m_mt, 'TARIF'] + delta_mt
+
 jasa_all['BAGI_HASIL'] = jasa_all['TOTAL HARGA'] * jasa_all['TARIF']
 jasa_all['FLAT'] = jasa_all['TOTAL HARGA'] * (tarif_flat / 100.0)
+
+st.caption(
+    "**Tarif aktif:** " +
+    " · ".join(f"{k} {v:.0f}%" for k, v in tarif_input.items()) +
+    f" · Lainnya {tarif_lain:.0f}% · pembanding flat {tarif_flat:.0f}%"
+    f" · prioritas bentrok: {prioritas}"
+)
+if pakai_mt_baru and abs(delta_mt) > 1e-12:
+    st.caption(
+        f"**Tarif Mati Total sejak {pd.Timestamp(tgl_mt_baru):%d %B %Y}:** "
+        f"{tarif_input['Mati Total']:.1f}% → **{tarif_mt_baru:.1f}%** "
+        f"({delta_mt*100:+.1f} poin, ikut menaikkan tarif khusus) · "
+        f"mempengaruhi {n_mt_baru:,} baris Mati Total. Faktur sebelum tanggal itu "
+        "tetap memakai tarif lama.")
 
 fa, fb, fc = st.columns([2.2, 1.4, 1])
 periode_list = daftar_periode_gaji(jasa_all['TGL'].min(), jasa_all['TGL'].max())
